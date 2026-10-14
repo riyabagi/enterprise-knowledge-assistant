@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Enterprise Knowledge Assistant</title>
+  <meta name="description" content="AI-powered enterprise knowledge retrieval and Q&A portal with role-based access, document management, and RAG-based answers." />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
+  <link href="/css/app.css" rel="stylesheet" />
+</head>
+<body>
+
+<!-- ═══════════════════════════════ NAVBAR ═══════════════════════════════ -->
+<nav class="navbar navbar-expand-lg navbar-dark sticky-top">
+  <div class="container-fluid px-4">
+    <a class="navbar-brand d-flex align-items-center gap-2" href="#">
+      <span class="brand-icon"><i class="bi bi-cpu-fill"></i></span>
+      <span>Knowledge <strong>Assistant</strong></span>
+    </a>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarNav">
+      <ul class="navbar-nav ms-auto align-items-lg-center gap-lg-1">
+        <li class="nav-item"><a class="nav-link" href="#" onclick="showTab('search')"><i class="bi bi-search me-1"></i>Search</a></li>
+        <li class="nav-item"><a class="nav-link" href="#" onclick="showTab('ask')"><i class="bi bi-chat-dots me-1"></i>Ask AI</a></li>
+        <li class="nav-item"><a class="nav-link" href="#" onclick="showTab('docs')"><i class="bi bi-folder2-open me-1"></i>Documents</a></li>
+        <li class="nav-item"><a class="nav-link" href="#" onclick="showTab('analytics')" id="nav-analytics"><i class="bi bi-bar-chart me-1"></i>Analytics</a></li>
+        <li class="nav-item ms-lg-3">
+          <div class="d-flex align-items-center gap-2" id="auth-controls">
+            <button class="btn btn-sm btn-outline-light" onclick="showLoginModal()"><i class="bi bi-person me-1"></i>Sign In</button>
+          </div>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<!-- ═══════════════════════════════ HERO ════════════════════════════════ -->
+<section class="hero-section text-center" id="hero">
+  <div class="container">
+    <div class="hero-badge mb-3"><i class="bi bi-shield-check me-2"></i>Enterprise Grade · Agentic RAG · Role-Based Access</div>
+    <h1 class="hero-title">Your AI-Powered<br><span class="gradient-text">Knowledge Portal</span></h1>
+    <p class="hero-subtitle">Ask questions in plain English. Get grounded answers with citations from your company's documents.</p>
+    <div class="hero-actions mt-4 d-flex gap-3 justify-content-center flex-wrap">
+      <button class="btn btn-primary btn-lg px-5" onclick="showTab('ask')"><i class="bi bi-chat-dots me-2"></i>Ask a Question</button>
+      <button class="btn btn-outline-light btn-lg px-5" onclick="showTab('search')"><i class="bi bi-search me-2"></i>Search Docs</button>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════ MAIN ════════════════════════════════ -->
+<main class="container-fluid px-4 py-4" id="main-content" style="display:none">
+
+  <!-- ── Ask AI Tab ──────────────────────────────────────────────────── -->
+  <div id="tab-ask" class="tab-pane">
+    <div class="row justify-content-center">
+      <div class="col-12 col-xl-9">
+        <div class="section-header mb-4">
+          <h2><i class="bi bi-chat-dots text-primary me-2"></i>Ask a Question</h2>
+          <p class="text-muted">Ask anything — the AI searches relevant documents and provides a grounded answer with citations.</p>
+        </div>
+        <div class="card ask-card">
+          <div class="card-body p-4">
+            <div class="input-group input-group-lg mb-3">
+              <span class="input-group-text bg-transparent border-end-0"><i class="bi bi-send text-primary"></i></span>
+              <input type="text" id="ask-input" class="form-control border-start-0" placeholder="e.g. What is the remote work policy?" maxlength="500" />
+              <button class="btn btn-primary" onclick="submitAsk()" id="ask-btn">
+                <i class="bi bi-arrow-right"></i><span class="d-none d-sm-inline ms-1">Ask</span>
+              </button>
+            </div>
+            <div class="char-counter text-end text-muted small" id="ask-char">0 / 500</div>
+          </div>
+        </div>
+
+        <div id="ask-result" style="display:none" class="mt-4">
+          <div class="card result-card">
+            <div class="card-header d-flex align-items-center gap-2">
+              <span class="status-dot" id="status-dot"></span>
+              <strong id="answer-status-label">Answer</strong>
+              <span class="ms-auto badge" id="chunks-badge"></span>
+            </div>
+            <div class="card-body p-4">
+              <div id="answer-text" class="answer-text"></div>
+            </div>
+          </div>
+
+          <div id="citations-section" class="mt-3" style="display:none">
+            <h6 class="citations-heading"><i class="bi bi-bookmark-check me-2"></i>Sources</h6>
+            <div id="citations-list" class="citations-grid"></div>
+          </div>
+
+          <div class="feedback-prompt mt-3" id="feedback-prompt" style="display:none">
+            <span class="text-muted small">Was this answer helpful?</span>
+            <div class="d-inline-flex gap-1 ms-2">
+              <button class="btn btn-sm btn-outline-success" onclick="quickFeedback(5)"><i class="bi bi-hand-thumbs-up"></i></button>
+              <button class="btn btn-sm btn-outline-danger" onclick="quickFeedback(2)"><i class="bi bi-hand-thumbs-down"></i></button>
+            </div>
+          </div>
+        </div>
+        <div id="ask-loading" class="text-center my-5" style="display:none">
+          <div class="ai-spinner"><div></div><div></div><div></div></div>
+          <p class="mt-3 text-muted">Searching knowledge base and generating answer…</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Search Tab ──────────────────────────────────────────────────── -->
+  <div id="tab-search" class="tab-pane" style="display:none">
+    <div class="section-header mb-4">
+      <h2><i class="bi bi-search text-primary me-2"></i>Search Documents</h2>
+      <p class="text-muted">Full-text search across all accessible knowledge base documents.</p>
+    </div>
+    <div class="card mb-4">
+      <div class="card-body p-3">
+        <div class="row g-2 align-items-end">
+          <div class="col-12 col-md-6">
+            <div class="input-group">
+              <span class="input-group-text"><i class="bi bi-search"></i></span>
+              <input type="text" id="search-input" class="form-control" placeholder="Search…" />
+            </div>
+          </div>
+          <div class="col-12 col-md-3">
+            <select id="search-category" class="form-select">
+              <option value="">All Categories</option>
+              <option value="GENERAL">General</option>
+              <option value="HR">HR</option>
+              <option value="IT">IT</option>
+              <option value="FINANCE">Finance</option>
+              <option value="LEGAL">Legal</option>
+              <option value="OPERATIONS">Operations</option>
+            </select>
+          </div>
+          <div class="col-12 col-md-3">
+            <button class="btn btn-primary w-100" onclick="doSearch()"><i class="bi bi-search me-2"></i>Search</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="search-results"></div>
+  </div>
+
+  <!-- ── Documents Tab ───────────────────────────────────────────────── -->
+  <div id="tab-docs" class="tab-pane" style="display:none">
+    <div class="d-flex align-items-center justify-content-between mb-4">
+      <div class="section-header mb-0">
+        <h2><i class="bi bi-folder2-open text-primary me-2"></i>Documents</h2>
+      </div>
+      <button class="btn btn-primary" onclick="showUploadModal()"><i class="bi bi-cloud-upload me-2"></i>Upload</button>
+    </div>
+    <div class="row g-3 mb-4">
+      <div class="col-12 col-md-4">
+        <select id="doc-category-filter" class="form-select" onchange="loadDocuments()">
+          <option value="">All Categories</option>
+          <option value="GENERAL">General</option>
+          <option value="HR">HR</option>
+          <option value="IT">IT</option>
+          <option value="FINANCE">Finance</option>
+          <option value="LEGAL">Legal</option>
+          <option value="OPERATIONS">Operations</option>
+        </select>
+      </div>
+    </div>
+    <div id="docs-list" class="row g-3"></div>
+  </div>
+
+  <!-- ── Analytics Tab ──────────────────────────────────────────────── -->
+  <div id="tab-analytics" class="tab-pane" style="display:none">
+    <div class="section-header mb-4">
+      <h2><i class="bi bi-bar-chart text-primary me-2"></i>Analytics <span class="badge bg-warning text-dark ms-2 fs-6">Admin</span></h2>
+    </div>
+    <div id="analytics-content">
+      <div class="row g-4" id="analytics-grid"></div>
+    </div>
+  </div>
+
+</main>
+
+<!-- ═══ LOGIN MODAL ═══════════════════════════════════════════════════ -->
+<div class="modal fade" id="loginModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title"><i class="bi bi-person-lock me-2 text-primary"></i>Sign In</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body px-4 pb-4">
+        <div class="mb-3">
+          <label class="form-label">Username</label>
+          <input type="text" id="login-username" class="form-control" placeholder="Username" autocomplete="username" />
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Password</label>
+          <input type="password" id="login-password" class="form-control" placeholder="Password" autocomplete="current-password" />
+        </div>
+        <div class="alert alert-danger py-2 d-none" id="login-error"></div>
+        <button class="btn btn-primary w-100" onclick="doLogin()"><i class="bi bi-box-arrow-in-right me-2"></i>Sign In</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ DELETE DOCUMENT CONFIRMATION ═══════════════════════════════════ -->
+<div class="modal fade" id="deleteDocumentModal" tabindex="-1" aria-labelledby="deleteDocumentTitle" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title" id="deleteDocumentTitle"><i class="bi bi-trash me-2 text-danger"></i>Delete document?</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p>Are you sure you want to permanently delete <strong id="delete-document-title"></strong>?</p>
+        <div class="alert alert-danger py-2 d-none mb-0" id="delete-document-error" role="alert"></div>
+      </div>
+      <div class="modal-footer border-0 pt-0">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-danger" id="confirm-delete-document" onclick="deleteDocument()">
+          <i class="bi bi-trash me-1"></i>Delete
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ UPLOAD MODAL ═══════════════════════════════════════════════════ -->
+<div class="modal fade" id="uploadModal" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title"><i class="bi bi-cloud-upload me-2 text-primary"></i>Upload Document</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body px-4 pb-4">
+        <div class="mb-3">
+          <label class="form-label">Title <span class="text-danger">*</span></label>
+          <input type="text" id="up-title" class="form-control" placeholder="Document title" maxlength="500" />
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Description</label>
+          <textarea id="up-desc" class="form-control" rows="2" maxlength="2000"></textarea>
+        </div>
+        <div class="row g-3 mb-3">
+          <div class="col-md-6">
+            <label class="form-label">Category <span class="text-danger">*</span></label>
+            <select id="up-cat" class="form-select">
+              <option value="GENERAL">General</option>
+              <option value="HR">HR</option>
+              <option value="IT">IT</option>
+              <option value="FINANCE">Finance</option>
+              <option value="LEGAL">Legal</option>
+              <option value="OPERATIONS">Operations</option>
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Access Level <span class="text-danger">*</span></label>
+            <select id="up-access" class="form-select">
+              <option value="PUBLIC">Public</option>
+              <option value="INTERNAL" selected>Internal</option>
+              <option value="HR_ONLY">HR Only</option>
+              <option value="RESTRICTED">Restricted</option>
+            </select>
+          </div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">File <span class="text-danger">*</span> <span class="text-muted">(PDF, TXT, MD — max 50MB)</span></label>
+          <input type="file" id="up-file" class="form-control" accept=".pdf,.txt,.md" />
+        </div>
+        <div class="alert alert-danger py-2 d-none" id="upload-error"></div>
+        <div class="upload-progress d-none" id="upload-progress">
+          <div class="progress mb-2"><div class="progress-bar progress-bar-striped progress-bar-animated" style="width:100%"></div></div>
+          <small class="text-muted">Indexing document…</small>
+        </div>
+        <button class="btn btn-primary w-100 mt-2" onclick="doUpload()"><i class="bi bi-cloud-upload me-2"></i>Upload & Index</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ DOCUMENT DETAILS ══════════════════════════════════════════════ -->
+<div class="modal fade" id="documentDetailsModal" tabindex="-1" aria-labelledby="document-details-heading" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title" id="document-details-heading">Document details</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div id="document-details-loading" class="text-center py-4"><div class="ai-spinner"><div></div><div></div><div></div></div></div>
+        <div id="document-details-error" class="alert alert-danger d-none" role="alert"></div>
+        <div id="document-details-content" class="d-none">
+          <dl class="row mb-3">
+            <dt class="col-sm-3">Description</dt><dd class="col-sm-9" id="document-details-description"></dd>
+            <dt class="col-sm-3">Category</dt><dd class="col-sm-9" id="document-details-category"></dd>
+            <dt class="col-sm-3">Access</dt><dd class="col-sm-9" id="document-details-access"></dd>
+            <dt class="col-sm-3">Owner</dt><dd class="col-sm-9" id="document-details-owner"></dd>
+            <dt class="col-sm-3">Current version</dt><dd class="col-sm-9" id="document-details-version"></dd>
+            <dt class="col-sm-3">File</dt><dd class="col-sm-9" id="document-details-filename"></dd>
+          </dl>
+          <h6>Extracted document text</h6>
+          <pre id="document-details-text" class="document-content"></pre>
+        </div>
+      </div>
+      <div class="modal-footer border-0">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ EDIT DOCUMENT METADATA ════════════════════════════════════════ -->
+<div class="modal fade" id="editDocumentModal" tabindex="-1" aria-labelledby="edit-document-heading" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title" id="edit-document-heading">Update document metadata</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <label class="form-label" for="edit-document-title">Title</label>
+        <input id="edit-document-title" class="form-control mb-3" maxlength="500" required />
+        <label class="form-label" for="edit-document-description">Description</label>
+        <textarea id="edit-document-description" class="form-control mb-3" rows="3" maxlength="2000"></textarea>
+        <label class="form-label" for="edit-document-category">Category</label>
+        <select id="edit-document-category" class="form-select mb-3">
+          <option value="GENERAL">General</option><option value="HR">HR</option><option value="IT">IT</option>
+          <option value="FINANCE">Finance</option><option value="LEGAL">Legal</option><option value="OPERATIONS">Operations</option>
+        </select>
+        <label class="form-label" for="edit-document-access">Access level</label>
+        <select id="edit-document-access" class="form-select mb-3">
+          <option value="PUBLIC">Public</option><option value="INTERNAL">Internal</option>
+          <option value="HR_ONLY">HR Only</option><option value="RESTRICTED">Restricted</option>
+        </select>
+        <div id="edit-document-error" class="alert alert-danger py-2 d-none" role="alert"></div>
+      </div>
+      <div class="modal-footer border-0">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" id="save-document-metadata" class="btn btn-primary" onclick="saveDocumentMetadata()">Save changes</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ DOCUMENT VERSION MANAGEMENT ═══════════════════════════════════ -->
+<div class="modal fade" id="documentVersionsModal" tabindex="-1" aria-labelledby="document-versions-heading" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title" id="document-versions-heading">Document versions</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div id="document-versions-list" class="mb-4"></div>
+        <div class="border-top pt-3">
+          <label class="form-label" for="new-document-version-file">Add a new version (PDF, TXT, or MD; max 50 MB)</label>
+          <input id="new-document-version-file" type="file" class="form-control" accept=".pdf,.txt,.md" />
+          <div id="document-version-error" class="alert alert-danger py-2 d-none mt-3" role="alert"></div>
+          <button type="button" id="upload-document-version" class="btn btn-primary mt-3" onclick="uploadDocumentVersion()">
+            <i class="bi bi-cloud-upload me-1"></i>Upload new version
+          </button>
+          <small id="document-version-progress" class="text-muted ms-2 d-none">Indexing new version…</small>
+        </div>
+      </div>
+      <div class="modal-footer border-0">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════ TOAST ════════════════════════════════ -->
+<div class="toast-container position-fixed bottom-0 end-0 p-3">
+  <div id="appToast" class="toast align-items-center border-0" role="alert" aria-live="assertive">
+    <div class="d-flex">
+      <div class="toast-body" id="toast-body"></div>
+      <button type="button" class="btn-close me-2 m-auto" data-bs-dismiss="toast"></button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/js/app.js"></script>
+</body>
+</html>
