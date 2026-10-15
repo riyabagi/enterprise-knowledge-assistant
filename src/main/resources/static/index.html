@@ -169,11 +169,38 @@
 
   <!-- ── Analytics Tab ──────────────────────────────────────────────── -->
   <div id="tab-analytics" class="tab-pane" style="display:none">
-    <div class="section-header mb-4">
-      <h2><i class="bi bi-bar-chart text-primary me-2"></i>Analytics <span class="badge bg-warning text-dark ms-2 fs-6">Admin</span></h2>
-    </div>
-    <div id="analytics-content">
-      <div class="row g-4" id="analytics-grid"></div>
+    <div id="analytics-content" class="analytics-dashboard">
+      <header class="analytics-header">
+        <div>
+          <div class="analytics-eyebrow"><span class="analytics-live-dot"></span> KNOWLEDGE INSIGHTS</div>
+          <h1>Analytics Overview</h1>
+          <p>Monitor knowledge usage, search performance, and employee engagement.</p>
+        </div>
+        <button class="btn analytics-refresh-btn" id="analytics-refresh-btn" type="button" onclick="loadAnalytics()">
+          <span class="analytics-refresh-content"><i class="bi bi-arrow-clockwise" aria-hidden="true"></i><span>Refresh</span></span>
+          <span class="analytics-refresh-loading" aria-hidden="true"><span class="spinner-border spinner-border-sm" role="status"></span><span>Refreshing</span></span>
+        </button>
+      </header>
+      <div id="analytics-status" class="analytics-status" role="status" aria-live="polite"></div>
+      <div class="analytics-kpi-grid" id="analytics-grid" aria-label="Analytics key metrics"></div>
+      <div id="analytics-reports" class="analytics-report-grid"></div>
+      <section class="analytics-panel analytics-access-panel">
+        <div class="analytics-panel-header">
+          <div>
+            <h2>Documents Accessible by Role</h2>
+            <p>Visibility follows the same access-policy grants as document search.</p>
+          </div>
+          <label class="analytics-role-picker">
+            <span>View role</span>
+            <select id="analytics-access-role" class="form-select form-select-sm" aria-label="Role for access report">
+              <option value="EMPLOYEE">Employee</option>
+              <option value="HR">HR</option>
+              <option value="ADMIN">Admin</option>
+            </select>
+          </label>
+        </div>
+        <div id="analytics-access-report" class="analytics-table-wrap" aria-live="polite"></div>
+      </section>
     </div>
   </div>
 
@@ -300,6 +327,9 @@
             <dt class="col-sm-3">File</dt><dd class="col-sm-9" id="document-details-filename"></dd>
           </dl>
           <h6>Extracted document text</h6>
+          <div id="document-details-empty" class="alert alert-warning d-none" role="status">
+            No extracted text is available for this version.
+          </div>
           <pre id="document-details-text" class="document-content"></pre>
         </div>
       </div>

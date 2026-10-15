@@ -19,6 +19,11 @@ The application uses MySQL for document storage and full-text search, Spring Sec
 - **Database migrations:** Manage schema changes and demonstration data using Flyway.
 - **Automated testing:** Include unit tests and integration tests using JUnit 5, Mockito, Spring Boot testing, and H2.
 
+The five preloaded sample documents are demonstrations assembled from their
+seeded searchable passages; they are not copies of original PDF or source files.
+Their version history and chunks are preserved. Administrators can edit
+document metadata; changing document content is done by uploading a new version.
+
 > **Retrieval note:** The current configuration uses MySQL full-text search. Ollama embeddings are disabled, so the application should not be described as using vector-based semantic search unless that capability is subsequently implemented and verified.
 
 ## Technology Stack
@@ -330,9 +335,12 @@ The following routes are implemented in the project according to the current app
 | POST | `/api/knowledge/search` | Search using a JSON request. |
 | POST | `/api/knowledge/ask` | Ask a natural-language question. |
 | POST | `/api/knowledge/feedback` | Submit feedback on an answer or document. |
-| GET | `/api/knowledge/analytics` | Retrieve aggregate analytics; admin-only. |
+| GET | `/api/knowledge/analytics` | Retrieve summary metrics and document/status, re-index, search-category, and feedback reports; admin-only. |
+| GET | `/api/knowledge/analytics/access?role=EMPLOYEE` | Admin-only report of indexed documents visible to the specified role, resolved through `access_policy`. |
 
 For exact JSON schemas and available operations, consult the application's Swagger UI.
+
+Analytics category-search counts include only search events where a category filter was explicitly selected. Searches made with “All Categories” are not attributed to a category because `search_history` does not store the categories of each returned result. The re-index report lists documents whose existing `reindex_required` flag is true; upload and re-index processing are synchronous, and the current application does not set that flag to true during its normal upload workflow. An administrator can open a listed document's version history and upload its replacement through the existing re-index operation.
 
 ## Testing
 

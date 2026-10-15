@@ -36,6 +36,10 @@ public class DocumentService {
 
     private static final long MAX_FILE_SIZE = 50 * 1024 * 1024L;
 
+    private static final String RECONSTRUCTED_TEXT_NOTICE =
+            "Reconstructed text assembled from indexed passages. "
+                    + "Original extracted text is unavailable.\n\n";
+
     private final KnowledgeDocumentRepository documentRepository;
     private final DocumentVersionRepository versionRepository;
     private final KnowledgeChunkRepository chunkRepository;
@@ -319,11 +323,14 @@ public class DocumentService {
 
         DocumentVersion version = doc.getCurrentVersion();
 
-        if (version == null || version.getExtractedText() == null) {
+        if (version == null) {
             return "";
         }
 
-        String text = version.getExtractedText();
+        String text = getReadableVersionText(version);
+        if (text == null) {
+            return "";
+        }
 
         return text.length() > 500
                 ? text.substring(0, 500) + "..."
@@ -342,7 +349,13 @@ public class DocumentService {
         verifyReadable(doc, allowedLevels, includeArchived);
 
         DocumentVersion version = doc.getCurrentVersion();
-        if (version == null || version.getExtractedText() == null) {
+        if (version == null) {
+            throw new ResourceNotFoundException(
+                    "Document content is not available: " + id);
+        }
+
+        String text = getReadableVersionText(version);
+        if (text == null) {
             throw new ResourceNotFoundException(
                     "Document content is not available: " + id);
         }
@@ -352,7 +365,7 @@ public class DocumentService {
                 doc.getTitle(),
                 version.getVersionNumber(),
                 version.getOriginalFilename(),
-                version.getExtractedText());
+                text);
     }
 
     @Transactional(readOnly = true)
@@ -372,6 +385,32 @@ public class DocumentService {
                 .stream()
                 .map(this::toVersionResponse)
                 .collect(Collectors.toList());
+    }
+
+    private String getReadableVersionText(DocumentVersion version) {
+        String extractedText = version.getExtractedText();
+        if (extractedText != null && !extractedText.isBlank()) {
+            return extractedText;
+        }
+
+        List<KnowledgeChunk> chunks = chunkRepository
+                .findByDocumentVersionIdOrderByChunkIndex(version.getId());
+        if (chunks.isEmpty()) {
+            return null;
+        }
+
+        StringBuilder text = new StringBuilder(RECONSTRUCTED_TEXT_NOTICE);
+        for (KnowledgeChunk chunk : chunks) {
+            if (text.length() > RECONSTRUCTED_TEXT_NOTICE.length()) {
+                text.append("\n\n");
+            }
+            if (chunk.getSectionReference() != null
+                    && !chunk.getSectionReference().isBlank()) {
+                text.append(chunk.getSectionReference()).append('\n');
+            }
+            text.append(chunk.getContent());
+        }
+        return text.toString();
     }
 
     private void verifyReadable(

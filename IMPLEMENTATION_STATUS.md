@@ -10,8 +10,8 @@ test or a direct runtime check; file presence alone is not sufficient.
 | Existing project features and API contracts inventoried | DONE — VERIFIED | Source audit completed; see requirements table below |
 | Assignment/problem statement checked | DONE — VERIFIED | Original supplied assignment attachment reviewed, including TC-05-01 through TC-05-12; no copy is stored in the project root |
 | Java/Maven versions checked | DONE — VERIFIED | Java 21.0.12.1, Maven 3.9.11 |
-| Current `mvn clean compile` | DONE — VERIFIED | Exit code 0; 58 main Java files compiled with Java 21; Lombok builder and annotation-processor warnings remain |
-| Current `mvn test` | DONE — VERIFIED | Exit code 0; 53 passed, 0 failed, 0 skipped |
+| Current `mvn clean compile` | DONE — VERIFIED | Exit code 0; 59 main Java files compiled with Java 21; Lombok builder and annotation-processor warnings remain |
+| Current `mvn test` | DONE — VERIFIED | Exit code 0; 56 passed, 0 failed, 0 skipped |
 | Runtime dependencies checked | DONE — VERIFIED | Docker daemon unavailable; localhost:3306 and localhost:11434 reachable; Ollama models enumerated |
 | Repository status checked | DONE — VERIFIED | No `.git` directory; `git status` is unavailable |
 
@@ -19,7 +19,7 @@ test or a direct runtime check; file presence alone is not sufficient.
 
 | Requirement | Status | Evidence / follow-up |
 |---|---|---|
-| Document lifecycle | PARTIALLY VERIFIED | H2 HTTP tests cover upload, extraction/chunk persistence, reindex/current-version retrieval, admin-only deletion with related-record cleanup, metadata authorization/validation, protected content reads, and archive restrictions. MySQL persistence remains unverified. |
+| Document lifecycle | PARTIALLY VERIFIED | H2 HTTP tests cover upload/read, all five seed-demo content/preview/version endpoints, admin-only metadata edits and authorization, version/chunk stability, reindex/current-version retrieval, deletion cleanup, and protected content. V4 populates only blank, identity-matched seed text from ordered chunks. Production MySQL persistence remains unverified. |
 | Search API | PARTIALLY VERIFIED | H2 HTTP tests cover normalized GET/POST search, category and access filters, distinct-document results, content/metadata fallback, and readback. Production MySQL FULLTEXT and count SQL have not been run. |
 | Grounded RAG and citation validation | PARTIALLY VERIFIED | Tests verify authorized H2 retrieval, exact VPN evidence in a five-chunk model prompt, numeric citation validation and document/version mapping, unsupported-evidence abstention, conflict status, and privacy-safe retrieval diagnostics. Local Ollama prompt smoke tests passed; actual persisted user chunks and full app-to-Ollama flow were not available. Labels are checked against retrieved chunks, not semantic entailment for arbitrary claims. |
 | REST API contracts and errors | PARTIALLY VERIFIED | Upload/search/ask/feedback/analytics and auth login/logout contracts have HTTP/security integration coverage; invalid document category error shape and all endpoints are not exhaustively checked. |
@@ -28,7 +28,8 @@ test or a direct runtime check; file presence alone is not sufficient.
 | Feedback persistence/ownership | DONE — VERIFIED | H2 HTTP test persists and reads back feedback; verifies answer ownership rejection and invalid rating rejection; existing service tests also cover denied document access and missing answer records. |
 | Database-backed analytics | DONE — VERIFIED | H2 HTTP test creates indexed document, search history, and answered question; employee is denied and admin receives populated persisted totals. |
 | Frontend/API/auth integration | PARTIALLY VERIFIED | JavaScript parses; frontend renders in a browser and now uses `/api/auth/login`, same-origin session cookies, CSRF headers, `/api/auth/me`, and server logout. HTTP integration tests verify login/session persistence; document-management actions were not exercised in an authenticated browser session. |
-| Flyway/MySQL/H2 schema parity | PARTIALLY VERIFIED | H2 Flyway schema starts and supports application integration tests. V3 conditionally repairs the documented sample-account hashes; its execution against the configured MySQL database, Hibernate validation, FULLTEXT and native count/search queries remain unverified. |
+| Flyway/MySQL/H2 schema parity | PARTIALLY VERIFIED | V4 Java migration passes H2 Flyway tests for seeded passage order, existing text preservation, uploaded-version safety, and retry counts. V1-V3 and V4 have not been run against configured MySQL credentials; production MySQL FULLTEXT and native count/search queries remain unverified. |
+| Seeded demonstration document text | DONE — VERIFIED | Migration test confirms V4 builds extracted text from ordered chunks for all five known seed identities, does not replace populated text or uploaded content, and creates no duplicate versions/chunks. HTTP tests verify Read/content, preview, history, metadata-edit persistence, HR_ONLY denial, Search, and Ask citations for all five fixtures. |
 | TC-05-01 — Upload and search | DONE — VERIFIED | H2 HTTP test verifies auth, document/version persistence, exactly one chunk for short text, and search readback. |
 | TC-05-02 — Invalid upload rejection | DONE — VERIFIED | Unsupported extension and invalid PDF return HTTP 400; document, version, and chunk counts remain unchanged. Valid PDF/TXT/Markdown extraction and empty, truncated, mislabeled, or MIME-mismatched PDF rejection are covered by HTTP integration tests. |
 | TC-05-03 — Grounded answer/citations | DONE — VERIFIED | Authenticated H2 HTTP ask verifies current authorized retrieval, valid citation index/chunk, persisted answer/status/citation JSON. A five-chunk regression verifies the exact VPN policy passage reaches the model prompt and returns a citation mapped to the source document and version. |
@@ -47,16 +48,16 @@ test or a direct runtime check; file presence alone is not sufficient.
 
 ## Validation evidence
 
-- Project sources include 58 main Java files and a static HTML/CSS/JavaScript frontend.
-- Reverified on 2026-10-14: `mvn clean compile` exit 0 with 58 main Java files
-  compiled under Java 21; `mvn test` exit 0 with 53 passed, 0 failed, 0 skipped.
+- Project sources include 59 main Java files and a static HTML/CSS/JavaScript frontend.
+- Reverified on 2026-10-14: `mvn clean compile` exit 0 with 59 main Java files
+  compiled under Java 21; `mvn test` exit 0 with 56 passed, 0 failed, 0 skipped.
 - The refreshed workspace Problems query reports 112 entries (first 50 returned),
   while `mvn clean compile` succeeds using `javac --release 21`. Returned IDE
   diagnostics include Spring Data null-annotation conversion warnings and
   configuration metadata/YAML inspection warnings; focused checks of the
   touched repository and security test files report no diagnostics.
 - The current Problems excerpt does not show the earlier "Flexible Constructor
-  Bodies" message. Maven compiles all 58 main Java files at release 21, so no
+  Bodies" message. Maven compiles all 59 main Java files at release 21, so no
   Java 25 source level is required.
 - The latest `mvn clean compile` emitted no javac warnings. `mvn test` still
   prints third-party Byte Buddy dynamic-agent and Commons Logging discovery
@@ -71,7 +72,7 @@ test or a direct runtime check; file presence alone is not sufficient.
 - Java 21 and Maven 3.9.11 are available.
 - Original assignment attachment was inspected; it is external to the project root.
 - The 12 mandatory assignment tests are mapped individually above.
-- `mvn test`: exit code 0; 53 passed, 0 failed, 0 skipped. The latest run emitted
+- `mvn test`: exit code 0; 56 passed, 0 failed, 0 skipped. The latest run emitted
   no `AuthenticationProvider`/`UserDetailsService` configuration warning; the
   tested DAO provider authenticates through the configured `UserDetailsService`.
 - MySQL port 3306 responds, but `DB_USERNAME`, `DB_PASSWORD`, and their Spring

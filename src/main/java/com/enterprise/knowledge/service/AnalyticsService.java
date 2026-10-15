@@ -2,11 +2,17 @@
 package com.enterprise.knowledge.service;
 
 import com.enterprise.knowledge.dto.AnalyticsResponse;
+import com.enterprise.knowledge.dto.AccessibleDocumentSummary;
+import com.enterprise.knowledge.dto.RoleAccessReport;
+import com.enterprise.knowledge.entity.AppUser;
 import com.enterprise.knowledge.entity.KnowledgeDocument;
 import com.enterprise.knowledge.repository.AnswerRecordRepository;
 import com.enterprise.knowledge.repository.KnowledgeDocumentRepository;
 import com.enterprise.knowledge.repository.KnowledgeFeedbackRepository;
 import com.enterprise.knowledge.repository.SearchHistoryRepository;
+import com.enterprise.knowledge.security.AccessLevelEvaluator;
+
+import java.util.List;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,17 +24,20 @@ public class AnalyticsService {
     private final SearchHistoryRepository searchHistoryRepository;
     private final AnswerRecordRepository answerRecordRepository;
     private final KnowledgeFeedbackRepository feedbackRepository;
+    private final AccessLevelEvaluator accessLevelEvaluator;
 
     public AnalyticsService(
             KnowledgeDocumentRepository documentRepository,
             SearchHistoryRepository searchHistoryRepository,
             AnswerRecordRepository answerRecordRepository,
-            KnowledgeFeedbackRepository feedbackRepository) {
+            KnowledgeFeedbackRepository feedbackRepository,
+            AccessLevelEvaluator accessLevelEvaluator) {
 
         this.documentRepository = documentRepository;
         this.searchHistoryRepository = searchHistoryRepository;
         this.answerRecordRepository = answerRecordRepository;
         this.feedbackRepository = feedbackRepository;
+        this.accessLevelEvaluator = accessLevelEvaluator;
     }
 
     @Transactional(readOnly = true)
@@ -56,6 +65,31 @@ public class AnalyticsService {
                 .totalQuestions(questions)
                 .answeredQuestions(answered)
                 .averageFeedbackRating(averageRating)
+                .documentCountsByCategoryAndStatus(
+                        documentRepository.countDocumentsByCategoryAndStatus())
+                .pendingReindexDocuments(
+                        documentRepository.findPendingReindexDocuments())
+                .mostFrequentlySearchedCategories(
+                        searchHistoryRepository.countSearchesBySelectedCategory())
+                .feedbackByDocument(feedbackRepository.summarizeRatingsByDocument())
                 .build();
+    }
+
+    @Transactional(readOnly = true)
+    public RoleAccessReport getAccessibleDocuments(AppUser.Role role) {
+        List<KnowledgeDocument.AccessLevel> allowedLevels =
+                accessLevelEvaluator.getAllowedLevels(role);
+        List<AccessibleDocumentSummary> documents = documentRepository
+                .findByStatusAndAccessLevelInOrderByTitleAsc(
+                        KnowledgeDocument.Status.INDEXED, allowedLevels)
+                .stream()
+                .map(document -> new AccessibleDocumentSummary(
+                        document.getId(),
+                        document.getTitle(),
+                        document.getCategory(),
+                        document.getAccessLevel(),
+                        document.getStatus()))
+                .toList();
+        return new RoleAccessReport(role, documents);
     }
 }

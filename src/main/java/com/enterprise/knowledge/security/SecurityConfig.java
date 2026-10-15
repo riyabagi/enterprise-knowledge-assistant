@@ -50,7 +50,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/auth/csrf").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/auth/login", "/api/auth/logout").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/auth/me").authenticated()
-                        .requestMatchers(HttpMethod.GET, "/api/knowledge/analytics").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.GET, "/api/knowledge/analytics/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.PUT, "/api/knowledge/documents/*/reindex").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.PUT, "/api/knowledge/documents/*").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.POST, "/api/knowledge/documents/*/archive").hasRole("ADMIN")

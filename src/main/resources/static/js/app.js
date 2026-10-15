@@ -43,6 +43,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.key === 'Enter') doSearch();
     });
 
+    document.getElementById('analytics-access-role').addEventListener('change', loadRoleAccessReport);
+
     restoreSession();
 });
 
@@ -397,10 +399,13 @@ async function showDocumentDetails(id) {
     const error = document.getElementById('document-details-error');
     const content = document.getElementById('document-details-content');
     const text = document.getElementById('document-details-text');
+    const empty = document.getElementById('document-details-empty');
     document.getElementById('document-details-heading').textContent = 'Document details';
     loading.classList.remove('d-none');
     error.classList.add('d-none');
     content.classList.add('d-none');
+    empty.classList.add('d-none');
+    text.classList.add('d-none');
     text.textContent = '';
     detailsModal.show();
 
@@ -421,7 +426,10 @@ async function showDocumentDetails(id) {
         document.getElementById('document-details-owner').textContent = details.ownerUsername || '';
         document.getElementById('document-details-version').textContent = details.currentVersion ? `v${details.currentVersion}` : 'None';
         document.getElementById('document-details-filename').textContent = details.originalFilename || 'Not available';
-        text.textContent = documentContent.content || '';
+        const documentText = documentContent.content || '';
+        text.textContent = documentText;
+        text.classList.toggle('d-none', !documentText.trim());
+        empty.classList.toggle('d-none', Boolean(documentText.trim()));
         content.classList.remove('d-none');
     } catch (e) {
         error.textContent = e.message || 'Unable to read this document.';
@@ -649,35 +657,203 @@ async function doUpload() {
 async function loadAnalytics() {
     if (!state.auth) return;
     const grid = document.getElementById('analytics-grid');
-    grid.innerHTML = '<div class="col-12 text-center py-5"><div class="ai-spinner"><div></div><div></div><div></div></div></div>';
+    const reports = document.getElementById('analytics-reports');
+    const accessReport = document.getElementById('analytics-access-report');
+    const refreshButton = document.getElementById('analytics-refresh-btn');
+    const status = document.getElementById('analytics-status');
+    const role = document.getElementById('analytics-access-role').value;
+
+    refreshButton.disabled = true;
+    refreshButton.setAttribute('aria-busy', 'true');
+    document.getElementById('analytics-content').setAttribute('aria-busy', 'true');
+    status.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-label="Loading"></span>Loading analytics data…';
+    grid.innerHTML = '';
+    reports.innerHTML = '';
+    accessReport.innerHTML = '<p class="analytics-empty">Loading role access…</p>';
 
     try {
-        const res = await apiFetch('/api/knowledge/analytics');
-        if (res.status === 403) {
-            grid.innerHTML = '<div class="col-12"><div class="alert alert-warning">Analytics is restricted to Admin users.</div></div>';
+        const [response, accessResponse] = await Promise.all([
+            apiFetch('/api/knowledge/analytics'),
+            apiFetch(`/api/knowledge/analytics/access?role=${encodeURIComponent(role)}`)
+        ]);
+        if (response.status === 403) {
+            status.innerHTML = '<div class="analytics-error"><i class="bi bi-shield-lock" aria-hidden="true"></i><span>Analytics is restricted to Admin users.</span></div>';
+            accessReport.innerHTML = '';
             return;
         }
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const d = await res.json();
+        if (!response.ok) throw new Error(`Unable to load analytics (HTTP ${response.status}).`);
+
+        const data = await response.json();
+        const feedbackRows = Array.isArray(data.feedbackByDocument) ? data.feedbackByDocument : [];
+        const feedbackCount = feedbackRows.reduce(
+            (total, row) => total + safeAnalyticsNumber(row.feedbackCount), 0);
+        const averageRatingValue = data.averageFeedbackRating;
+        const parsedAverageRating = averageRatingValue === null || averageRatingValue === undefined || averageRatingValue === ''
+            ? null : Number(averageRatingValue);
+        const averageRating = feedbackCount > 0 && parsedAverageRating !== null && Number.isFinite(parsedAverageRating)
+            ? parsedAverageRating : null;
         const metrics = [
-            { icon: 'bi-folder2-open', label: 'Total Documents', value: d.totalDocuments },
-            { icon: 'bi-check-circle', label: 'Indexed Documents', value: d.indexedDocuments },
-            { icon: 'bi-search', label: 'Total Searches', value: d.totalSearches },
-            { icon: 'bi-chat-dots', label: 'Questions Asked', value: d.totalQuestions },
-            { icon: 'bi-lightbulb', label: 'Answered', value: d.answeredQuestions },
-            { icon: 'bi-star', label: 'Avg. Feedback Rating', value: d.averageFeedbackRating.toFixed(2) + ' / 5' }
+            { icon: 'bi-folder2', label: 'Total documents', value: formatAnalyticsNumber(data.totalDocuments), description: 'Documents in the knowledge base', tone: 'blue' },
+            { icon: 'bi-check2-circle', label: 'Indexed documents', value: formatAnalyticsNumber(data.indexedDocuments), description: 'Available to search and retrieve', tone: 'green' },
+            { icon: 'bi-search', label: 'Total searches', value: formatAnalyticsNumber(data.totalSearches), description: 'Recorded search requests', tone: 'violet' },
+            { icon: 'bi-chat-square-text', label: 'AI questions', value: formatAnalyticsNumber(data.totalQuestions), description: 'Questions submitted to Ask AI', tone: 'amber' },
+            { icon: 'bi-patch-check', label: 'Answered questions', value: formatAnalyticsNumber(data.answeredQuestions), description: 'Answers supported by evidence', tone: 'teal' },
+            { icon: 'bi-star', label: 'Average feedback', value: averageRating === null ? 'No ratings' : `${averageRating.toFixed(2)} / 5`, description: averageRating === null ? 'No feedback has been recorded' : `${formatAnalyticsNumber(feedbackCount)} feedback responses`, tone: 'rose' }
         ];
-        grid.innerHTML = metrics.map(m => `
-      <div class="col-6 col-md-4 col-xl-2">
-        <div class="analytics-card">
-          <i class="bi ${m.icon} metric-icon text-primary"></i>
-          <div class="metric-value">${m.value}</div>
-          <div class="metric-label">${m.label}</div>
-        </div>
-      </div>`).join('');
-    } catch (e) {
-        grid.innerHTML = `<div class="col-12"><div class="alert alert-danger">${e.message}</div></div>`;
+        grid.innerHTML = metrics.map(renderAnalyticsMetric).join('');
+        renderAnalyticsReports(data);
+
+        if (!accessResponse.ok) {
+            accessReport.innerHTML = `<div class="analytics-error"><i class="bi bi-exclamation-circle" aria-hidden="true"></i><span>${escHtml(`Unable to load role access (HTTP ${accessResponse.status}).`)}</span></div>`;
+        } else {
+            renderRoleAccessReport(await accessResponse.json());
+        }
+        status.textContent = 'Analytics data loaded.';
+    } catch (error) {
+        status.innerHTML = `<div class="analytics-error"><i class="bi bi-exclamation-circle" aria-hidden="true"></i><span>${escHtml(error.message || 'Analytics could not be loaded. Please try again.')}</span></div>`;
+        grid.innerHTML = '';
+        reports.innerHTML = '';
+        accessReport.innerHTML = '<p class="analytics-empty">The role access report is unavailable until analytics data loads.</p>';
+    } finally {
+        refreshButton.disabled = false;
+        refreshButton.removeAttribute('aria-busy');
+        document.getElementById('analytics-content').removeAttribute('aria-busy');
     }
+}
+
+async function loadRoleAccessReport() {
+    if (!state.auth) return;
+    const role = document.getElementById('analytics-access-role').value;
+    const container = document.getElementById('analytics-access-report');
+    container.innerHTML = '<p class="analytics-empty">Loading role access…</p>';
+    try {
+        const response = await apiFetch(`/api/knowledge/analytics/access?role=${encodeURIComponent(role)}`);
+        if (!response.ok) throw new Error(`Unable to load role access (HTTP ${response.status}).`);
+        renderRoleAccessReport(await response.json());
+    } catch (error) {
+        container.innerHTML = `<div class="analytics-error"><i class="bi bi-exclamation-circle" aria-hidden="true"></i><span>${escHtml(error.message || 'The role access report could not be loaded.')}</span></div>`;
+    }
+}
+
+function safeAnalyticsNumber(value) {
+    if (value === null || value === undefined || value === '') return 0;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : 0;
+}
+
+function formatAnalyticsNumber(value) {
+    if (value === null || value === undefined || value === '') return '—';
+    const number = Number(value);
+    return Number.isFinite(number) ? new Intl.NumberFormat().format(number) : '—';
+}
+
+function renderAnalyticsMetric(metric) {
+    return `<article class="analytics-kpi-card">
+        <div class="analytics-kpi-top">
+          <span class="analytics-kpi-icon ${metric.tone}"><i class="bi ${metric.icon}" aria-hidden="true"></i></span>
+          <span class="analytics-kpi-label">${escHtml(metric.label)}</span>
+        </div>
+        <div class="analytics-kpi-value">${escHtml(metric.value)}</div>
+        <p class="analytics-kpi-description">${escHtml(metric.description)}</p>
+      </article>`;
+}
+
+function renderAnalyticsReports(data) {
+    const reports = document.getElementById('analytics-reports');
+    const categoryStatusRows = Array.isArray(data.documentCountsByCategoryAndStatus)
+        ? data.documentCountsByCategoryAndStatus : [];
+    const pendingRows = Array.isArray(data.pendingReindexDocuments) ? data.pendingReindexDocuments : [];
+    const searchRows = Array.isArray(data.mostFrequentlySearchedCategories)
+        ? data.mostFrequentlySearchedCategories : [];
+    const feedbackRows = Array.isArray(data.feedbackByDocument) ? data.feedbackByDocument : [];
+
+    const table = (headers, rows, emptyMessage) => rows.length
+        ? `<div class="table-responsive"><table class="table analytics-table align-middle mb-0">
+            <thead><tr>${headers.map(header => `<th scope="col">${header}</th>`).join('')}</tr></thead>
+            <tbody>${rows.join('')}</tbody></table></div>`
+        : `<p class="analytics-empty">${escHtml(emptyMessage)}</p>`;
+
+    const maxSearchCount = Math.max(0, ...searchRows.map(row => safeAnalyticsNumber(row.searchCount)));
+    const searchChart = searchRows.length
+        ? `<div class="analytics-bars" role="list" aria-label="Searches by selected category">${searchRows.map(row => {
+            const count = safeAnalyticsNumber(row.searchCount);
+            const width = maxSearchCount > 0 ? Math.round((count / maxSearchCount) * 100) : 0;
+            return `<div class="analytics-bar-row" role="listitem">
+                <div class="analytics-bar-label"><span>${escHtml(row.category || 'Unspecified')}</span><strong>${formatAnalyticsNumber(count)}</strong></div>
+                <div class="analytics-bar-track" role="img" aria-label="${escHtml(`${row.category || 'Unspecified'}: ${count} searches`)}"><span style="width:${width}%"></span></div>
+              </div>`;
+        }).join('')}</div>`
+        : '<p class="analytics-empty">No category-filtered searches have been recorded.</p>';
+
+    const ratingTotals = [1, 2, 3, 4, 5].map(rating => feedbackRows.reduce(
+        (sum, row) => sum + safeAnalyticsNumber(row[`${['', 'one', 'two', 'three', 'four', 'five'][rating]}StarCount`]), 0));
+    const maxRatingCount = Math.max(0, ...ratingTotals);
+    const ratingChart = maxRatingCount > 0
+        ? `<div class="analytics-bars" role="list" aria-label="Feedback rating distribution">${ratingTotals.map((count, index) => {
+            const rating = index + 1;
+            const width = Math.round((count / maxRatingCount) * 100);
+            return `<div class="analytics-bar-row" role="listitem">
+                <div class="analytics-bar-label"><span>${rating} ${rating === 1 ? 'star' : 'stars'}</span><strong>${formatAnalyticsNumber(count)}</strong></div>
+                <div class="analytics-bar-track rating-track" role="img" aria-label="${rating} stars: ${count} responses"><span style="width:${width}%"></span></div>
+              </div>`;
+        }).join('')}</div>`
+        : '<p class="analytics-empty">No feedback ratings have been recorded.</p>';
+
+    const categoryTable = table(
+        ['Category', 'Status', 'Documents'],
+        categoryStatusRows.map(row => `<tr><td>${escHtml(row.category)}</td><td><span class="analytics-status-pill">${escHtml(row.status)}</span></td><td>${formatAnalyticsNumber(row.documentCount)}</td></tr>`),
+        'No documents are recorded.'
+    );
+    const pendingTable = table(
+        ['Document', 'Category', 'Status', 'Re-index required', 'Access', ''],
+        pendingRows.map(row => {
+            const id = Number(row.id);
+            const action = Number.isSafeInteger(id)
+                ? `<button class="btn btn-sm analytics-table-action" onclick="showDocumentVersions(${id})" aria-label="${escHtml(`Open versions for ${row.title || 'document'}`)}">Open versions</button>`
+                : '—';
+            return `<tr><td class="analytics-document-name">${escHtml(row.title || 'Untitled document')}</td><td>${escHtml(row.category)}</td><td><span class="analytics-status-pill">${escHtml(row.status)}</span></td><td>${row.reindexRequired === true ? 'Yes' : 'No'}</td><td>${escHtml(row.accessLevel)}</td><td>${action}</td></tr>`;
+        }),
+        'No documents are currently flagged as requiring re-indexing.'
+    );
+    const feedbackTable = table(
+        ['Document', 'Responses', 'Average rating', '1★', '2★', '3★', '4★', '5★'],
+        feedbackRows.map(row => {
+            const count = safeAnalyticsNumber(row.feedbackCount);
+            const average = count > 0 && row.averageRating !== null && row.averageRating !== undefined
+                ? Number(row.averageRating) : null;
+            const averageText = average !== null && Number.isFinite(average) ? `${average.toFixed(2)} / 5` : 'No ratings';
+            return `<tr><td class="analytics-document-name">${escHtml(row.documentTitle || 'Untitled document')}</td><td>${formatAnalyticsNumber(count)}</td><td>${escHtml(averageText)}</td><td>${formatAnalyticsNumber(row.oneStarCount)}</td><td>${formatAnalyticsNumber(row.twoStarCount)}</td><td>${formatAnalyticsNumber(row.threeStarCount)}</td><td>${formatAnalyticsNumber(row.fourStarCount)}</td><td>${formatAnalyticsNumber(row.fiveStarCount)}</td></tr>`;
+        }),
+        'No documents are recorded.'
+    );
+
+    const panels = [
+        { title: 'Searches by category', description: 'Searches with an explicitly selected category filter.', body: searchChart, className: 'analytics-panel-chart' },
+        { title: 'Feedback rating distribution', description: 'Recorded ratings across documents, grouped by star value.', body: ratingChart, className: 'analytics-panel-chart' },
+        { title: 'Documents by category and status', description: 'Current document inventory grouped by its stored category and status.', body: categoryTable, className: 'analytics-panel-wide' },
+        { title: 'Documents awaiting re-indexing', description: 'Documents explicitly marked by the existing re-index-required flag.', body: pendingTable, className: 'analytics-panel-wide' },
+        { title: 'Feedback by document', description: 'Per-document response counts, averages, and rating distribution.', body: feedbackTable, className: 'analytics-panel-wide' }
+    ];
+
+    reports.innerHTML = panels.map(panel => `<section class="analytics-panel ${panel.className}">
+        <div class="analytics-panel-header">
+          <div><h2>${panel.title}</h2><p>${panel.description}</p></div>
+        </div>
+        <div class="analytics-table-wrap">${panel.body}</div>
+      </section>`).join('');
+}
+
+function renderRoleAccessReport(report) {
+    const container = document.getElementById('analytics-access-report');
+    const documents = Array.isArray(report.documents) ? report.documents : [];
+    if (!documents.length) {
+        container.innerHTML = `<p class="analytics-empty">No indexed documents are accessible to ${escHtml(report.role || 'this role')}.</p>`;
+        return;
+    }
+    container.innerHTML = `<div class="table-responsive"><table class="table analytics-table align-middle mb-0">
+        <thead><tr><th scope="col">Document</th><th scope="col">Category</th><th scope="col">Access level</th><th scope="col">Status</th></tr></thead>
+        <tbody>${documents.map(document => `<tr><td class="analytics-document-name">${escHtml(document.title || 'Untitled document')}</td><td>${escHtml(document.category)}</td><td>${escHtml(document.accessLevel)}</td><td><span class="analytics-status-pill">${escHtml(document.status)}</span></td></tr>`).join('')}</tbody>
+      </table></div>`;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────

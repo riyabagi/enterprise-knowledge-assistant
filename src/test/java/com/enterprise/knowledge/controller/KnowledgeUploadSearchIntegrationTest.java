@@ -4,6 +4,7 @@ import com.enterprise.knowledge.entity.AccessPolicy;
 import com.enterprise.knowledge.entity.AppUser;
 import com.enterprise.knowledge.entity.DocumentVersion;
 import com.enterprise.knowledge.entity.KnowledgeDocument;
+import com.enterprise.knowledge.entity.KnowledgeChunk;
 import com.enterprise.knowledge.entity.AnswerRecord;
 import com.enterprise.knowledge.entity.KnowledgeFeedback;
 import com.enterprise.knowledge.repository.AccessPolicyRepository;
@@ -17,6 +18,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
@@ -34,6 +36,8 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.util.UriComponentsBuilder;
@@ -88,13 +92,38 @@ class KnowledgeUploadSearchIntegrationTest {
     private AnswerRecordRepository answerRecordRepository;
     @Autowired
     private KnowledgeFeedbackRepository feedbackRepository;
+    @Autowired
+    private PlatformTransactionManager transactionManager;
     @MockBean
     private ChatClient chatClient;
+
+    private final List<Long> seededDocumentIds = new java.util.ArrayList<>();
 
     @BeforeEach
     void initializeSessionClient() {
         restTemplate = new SessionRestTemplate(null, null);
         sessions.clear();
+        seededDocumentIds.clear();
+    }
+
+    @AfterEach
+    void removeSeededDemonstrationFixtures() {
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            for (Long documentId : seededDocumentIds) {
+                documentRepository.findById(documentId).ifPresent(document -> {
+                    List<DocumentVersion> versions =
+                            versionRepository.findByDocumentOrderByVersionNumberDesc(document);
+                    List<Long> versionIds = versions.stream().map(DocumentVersion::getId).toList();
+                    document.setCurrentVersion(null);
+                    documentRepository.saveAndFlush(document);
+                    if (!versionIds.isEmpty()) {
+                        chunkRepository.deleteByDocumentVersionIds(versionIds);
+                        versionRepository.deleteAll(versions);
+                    }
+                    documentRepository.delete(document);
+                });
+            }
+        });
     }
 
     @Test
@@ -123,6 +152,12 @@ class KnowledgeUploadSearchIntegrationTest {
         assertEquals(1, chunkRepository.findByDocumentVersionId(
                 persistedDocument.getCurrentVersion().getId()).size(),
                 "short documents should produce one chunk rather than duplicated suffixes");
+        ResponseEntity<String> contentResponse =
+                restTemplate.withSessionLogin(username, PASSWORD)
+                        .getForEntity("/api/knowledge/documents/" + documentId + "/content", String.class);
+        assertEquals(200, contentResponse.getStatusCode().value(), contentResponse.getBody());
+        assertTrue(objectMapper.readTree(contentResponse.getBody())
+                .path("content").asText().contains(content));
 
         java.net.URI searchUri = UriComponentsBuilder
                 .fromUriString("http://localhost:" + port + "/api/knowledge/search")
@@ -137,6 +172,100 @@ class KnowledgeUploadSearchIntegrationTest {
         assertTrue(results.isArray());
         assertTrue(containsDocument(results, documentId),
                 "uploaded document was not returned by search: " + searchResponse.getBody());
+    }
+
+    @Test
+    void seededDemonstrationDocumentsAreReadableEditableAndVersionedThroughApi() throws Exception {
+        String admin = createUser(AppUser.Role.ADMIN);
+        String employee = createEmployee();
+        for (KnowledgeDocument.AccessLevel level : KnowledgeDocument.AccessLevel.values()) {
+            ensureAccessPolicy(AppUser.Role.ADMIN, level);
+        }
+        List<SeededDocument> samples = createSeededDemonstrationDocuments(admin);
+        SessionRestTemplate adminSession = restTemplate.withSessionLogin(admin, PASSWORD);
+
+        for (SeededDocument sample : samples) {
+            String route = "/api/knowledge/documents/" + sample.id();
+            ResponseEntity<String> contentResponse =
+                    adminSession.getForEntity(route + "/content", String.class);
+            assertEquals(200, contentResponse.getStatusCode().value(), contentResponse.getBody());
+            JsonNode content = objectMapper.readTree(contentResponse.getBody());
+            assertTrue(content.path("content").asText().contains(sample.firstPassage()),
+                    sample.title() + " content endpoint omitted its seeded passage");
+            assertTrue(content.path("content").asText().contains(
+                    "Original extracted text is unavailable."));
+
+            ResponseEntity<String> previewResponse =
+                    adminSession.getForEntity(route + "/preview", String.class);
+            assertEquals(200, previewResponse.getStatusCode().value(), previewResponse.getBody());
+            assertTrue(previewResponse.getBody().contains(sample.firstPassage()),
+                    sample.title() + " preview endpoint omitted its seeded passage");
+
+            ResponseEntity<String> versionsResponse =
+                    adminSession.getForEntity(route + "/versions", String.class);
+            assertEquals(200, versionsResponse.getStatusCode().value(), versionsResponse.getBody());
+            JsonNode versions = objectMapper.readTree(versionsResponse.getBody());
+            assertEquals(1, versions.size(), sample.title() + " should retain its seeded version");
+            assertEquals(1, versions.get(0).path("versionNumber").asInt());
+
+            KnowledgeDocument persisted = documentRepository.findById(sample.id()).orElseThrow();
+            assertEquals(1, versionRepository.countByDocument(persisted));
+            assertEquals(sample.chunkCount(),
+                    chunkRepository.findByDocumentVersionIdOrderByChunkIndex(
+                            persisted.getCurrentVersion().getId()).size());
+        }
+
+        SeededDocument remoteWork = samples.get(0);
+        String remoteWorkRoute = "/api/knowledge/documents/" + remoteWork.id();
+        ResponseEntity<String> deniedEdit = restTemplate.withSessionLogin(employee, PASSWORD)
+                .exchange(remoteWorkRoute, HttpMethod.PUT, jsonRequest(
+                        "{\"title\":\"Unauthorized change\",\"description\":\"No\","
+                                + "\"category\":\"HR\",\"accessLevel\":\"INTERNAL\"}"), String.class);
+        assertEquals(403, deniedEdit.getStatusCode().value());
+
+        ResponseEntity<String> updated = adminSession.exchange(remoteWorkRoute, HttpMethod.PUT,
+                jsonRequest("{\"title\":\"Updated Demonstration Policy\","
+                        + "\"description\":\"Updated metadata only\","
+                        + "\"category\":\"OPERATIONS\",\"accessLevel\":\"INTERNAL\"}"), String.class);
+        assertEquals(200, updated.getStatusCode().value(), updated.getBody());
+        ResponseEntity<String> reloaded = adminSession.getForEntity(remoteWorkRoute, String.class);
+        JsonNode updatedDocument = objectMapper.readTree(reloaded.getBody());
+        assertEquals("Updated Demonstration Policy", updatedDocument.path("title").asText());
+        assertEquals("Updated metadata only", updatedDocument.path("description").asText());
+        assertEquals("OPERATIONS", updatedDocument.path("category").asText());
+        KnowledgeDocument updatedEntity = documentRepository.findById(remoteWork.id()).orElseThrow();
+        assertEquals(1, versionRepository.countByDocument(updatedEntity),
+                "metadata edits must not create or overwrite document versions");
+        assertEquals(remoteWork.chunkCount(), chunkRepository.findByDocumentVersionIdOrderByChunkIndex(
+                updatedEntity.getCurrentVersion().getId()).size());
+
+        SeededDocument hrDocument = samples.get(3);
+        String hrRoute = "/api/knowledge/documents/" + hrDocument.id();
+        assertEquals(403, restTemplate.withSessionLogin(employee, PASSWORD)
+                .getForEntity(hrRoute + "/content", String.class).getStatusCode().value());
+        assertEquals(403, restTemplate.withSessionLogin(employee, PASSWORD)
+                .getForEntity(hrRoute + "/preview", String.class).getStatusCode().value());
+        assertEquals(403, restTemplate.withSessionLogin(employee, PASSWORD)
+                .getForEntity(hrRoute + "/versions", String.class).getStatusCode().value());
+
+        java.net.URI searchUri = UriComponentsBuilder
+                .fromUriString("http://localhost:" + port + "/api/knowledge/search")
+                .queryParam("query", "company VPN remote access")
+                .build().encode().toUri();
+        ResponseEntity<String> search = adminSession.getForEntity(searchUri, String.class);
+        assertEquals(200, search.getStatusCode().value(), search.getBody());
+        assertTrue(containsDocument(
+                objectMapper.readTree(search.getBody()).path("results"), samples.get(1).id()));
+
+        stubAnswer("Report any VPN issues to the IT helpdesk immediately [1].");
+        ResponseEntity<String> ask = adminSession.postForEntity("/api/knowledge/ask",
+                jsonRequest("{\"question\":\"What does the VPN Usage section say about reporting VPN issues to the IT helpdesk?\"}"),
+                String.class);
+        assertEquals(200, ask.getStatusCode().value(), ask.getBody());
+        JsonNode answer = objectMapper.readTree(ask.getBody());
+        assertEquals("ANSWERED", answer.path("status").asText());
+        assertTrue(answer.path("citations").size() > 0);
+        assertEquals(samples.get(1).id(), answer.path("citations").get(0).path("documentId").asLong());
     }
 
     @Test
@@ -494,6 +623,9 @@ class KnowledgeUploadSearchIntegrationTest {
         String newMarker = "Current" + unique;
         long documentId = uploadDocument(employee, "tc-05-09-original.txt",
                 "The " + oldMarker + " procedure is archived.", "GENERAL", "INTERNAL");
+        KnowledgeDocument pendingDocument = documentRepository.findById(documentId).orElseThrow();
+        pendingDocument.setReindexRequired(true);
+        documentRepository.saveAndFlush(pendingDocument);
 
         ResponseEntity<String> reindexResponse = restTemplate.withSessionLogin(admin, PASSWORD)
                 .exchange("/api/knowledge/documents/" + documentId + "/reindex", HttpMethod.PUT,
@@ -502,6 +634,7 @@ class KnowledgeUploadSearchIntegrationTest {
                                 "GENERAL", "INTERNAL"),
                         String.class);
         assertEquals(200, reindexResponse.getStatusCode().value(), reindexResponse.getBody());
+        assertFalse(documentRepository.findById(documentId).orElseThrow().getReindexRequired());
 
         ResponseEntity<String> oldSearch = restTemplate.withSessionLogin(employee, PASSWORD)
                 .postForEntity("/api/knowledge/search",
@@ -598,6 +731,152 @@ class KnowledgeUploadSearchIntegrationTest {
         assertTrue(metrics.has("averageFeedbackRating"));
     }
 
+    @Test
+    void analyticsReportsAggregatesPendingReindexFeedbackAndRoleAccess() throws Exception {
+        String employee = createEmployee();
+        String admin = createUser(AppUser.Role.ADMIN);
+        ensureAccessPolicy(AppUser.Role.ADMIN, KnowledgeDocument.AccessLevel.HR_ONLY);
+        ensureAccessPolicy(AppUser.Role.HR, KnowledgeDocument.AccessLevel.HR_ONLY);
+        long feedbackDocumentId = uploadDocument(employee, "analytics-finance.txt",
+                "Orion finance policy requires quarterly reconciliation.", "FINANCE", "INTERNAL");
+        long noFeedbackDocumentId = uploadDocument(employee, "analytics-general.txt",
+                "Orion general safety policy requires a quarterly review.", "GENERAL", "INTERNAL");
+        long restrictedDocumentId = uploadDocument(admin, "analytics-hr.txt",
+                "Orion HR compensation details are confidential.", "HR", "HR_ONLY");
+        SessionRestTemplate adminSession = restTemplate.withSessionLogin(admin, PASSWORD);
+        ResponseEntity<String> beforeFlagging =
+                adminSession.getForEntity("/api/knowledge/analytics", String.class);
+        assertEquals(200, beforeFlagging.getStatusCode().value(), beforeFlagging.getBody());
+        assertTrue(objectMapper.readTree(beforeFlagging.getBody())
+                .path("pendingReindexDocuments").isEmpty());
+
+        ResponseEntity<String> categorySearch = restTemplate.withSessionLogin(employee, PASSWORD)
+                .postForEntity("/api/knowledge/search",
+                        jsonRequest("{\"query\":\"Orion finance reconciliation\",\"category\":\"FINANCE\"}"),
+                        String.class);
+        assertEquals(200, categorySearch.getStatusCode().value(), categorySearch.getBody());
+
+        KnowledgeDocument pendingDocument =
+                documentRepository.findById(feedbackDocumentId).orElseThrow();
+        pendingDocument.setReindexRequired(true);
+        documentRepository.saveAndFlush(pendingDocument);
+
+        AppUser feedbackUser = userRepository.findByUsername(employee).orElseThrow();
+        KnowledgeDocument feedbackDocument =
+                documentRepository.findById(feedbackDocumentId).orElseThrow();
+        AnswerRecord answer = answerRecordRepository.saveAndFlush(AnswerRecord.builder()
+                .user(feedbackUser)
+                .question("What does the finance policy require?")
+                .answerText("Quarterly reconciliation is required.")
+                .status(AnswerRecord.Status.ANSWERED)
+                .citationJson("[]")
+                .build());
+        feedbackRepository.saveAndFlush(KnowledgeFeedback.builder()
+                .user(feedbackUser)
+                .document(feedbackDocument)
+                .answerRecord(answer)
+                .rating((byte) 5)
+                .comment("Useful")
+                .build());
+
+        ResponseEntity<String> employeeMetrics = restTemplate.withSessionLogin(employee, PASSWORD)
+                .getForEntity("/api/knowledge/analytics", String.class);
+        assertEquals(403, employeeMetrics.getStatusCode().value());
+
+        ResponseEntity<String> metricsResponse =
+                adminSession.getForEntity("/api/knowledge/analytics", String.class);
+        assertEquals(200, metricsResponse.getStatusCode().value(), metricsResponse.getBody());
+        JsonNode metrics = objectMapper.readTree(metricsResponse.getBody());
+
+        JsonNode categoryStatus = findJson(metrics.path("documentCountsByCategoryAndStatus"),
+                "category", "FINANCE", "status", "INDEXED");
+        assertTrue(categoryStatus.path("documentCount").asLong() >= 1);
+
+        JsonNode pending = findJson(metrics.path("pendingReindexDocuments"),
+                "id", feedbackDocumentId);
+        assertEquals("FINANCE", pending.path("category").asText());
+        assertTrue(pending.path("reindexRequired").asBoolean());
+
+        JsonNode searchCategory = findJson(metrics.path("mostFrequentlySearchedCategories"),
+                "category", "FINANCE");
+        assertTrue(searchCategory.path("searchCount").asLong() >= 1);
+        long previousSearchCount = Long.MAX_VALUE;
+        for (JsonNode searchRow : metrics.path("mostFrequentlySearchedCategories")) {
+            long searchCount = searchRow.path("searchCount").asLong();
+            assertTrue(searchCount <= previousSearchCount, "category counts must be descending");
+            previousSearchCount = searchCount;
+        }
+
+        JsonNode feedbackSummary = findJson(metrics.path("feedbackByDocument"),
+                "documentId", feedbackDocumentId);
+        assertEquals(1, feedbackSummary.path("feedbackCount").asLong());
+        assertEquals(5.0, feedbackSummary.path("averageRating").asDouble());
+        assertEquals(1, feedbackSummary.path("fiveStarCount").asLong());
+
+        JsonNode noFeedback = findJson(metrics.path("feedbackByDocument"),
+                "documentId", noFeedbackDocumentId);
+        assertEquals(0, noFeedback.path("feedbackCount").asLong());
+        assertTrue(noFeedback.path("averageRating").isNull());
+        assertEquals(0, noFeedback.path("fiveStarCount").asLong());
+
+        ResponseEntity<String> employeeAccess = adminSession.getForEntity(
+                "/api/knowledge/analytics/access?role=EMPLOYEE", String.class);
+        assertEquals(200, employeeAccess.getStatusCode().value(), employeeAccess.getBody());
+        JsonNode employeeDocuments = objectMapper.readTree(employeeAccess.getBody()).path("documents");
+        assertTrue(containsAccessibleDocument(employeeDocuments, feedbackDocumentId));
+        assertFalse(containsAccessibleDocument(employeeDocuments, restrictedDocumentId));
+
+        ResponseEntity<String> hrAccess = adminSession.getForEntity(
+                "/api/knowledge/analytics/access?role=HR", String.class);
+        assertEquals(200, hrAccess.getStatusCode().value(), hrAccess.getBody());
+        assertTrue(containsAccessibleDocument(
+                objectMapper.readTree(hrAccess.getBody()).path("documents"), restrictedDocumentId),
+                hrAccess.getBody());
+
+        ResponseEntity<String> employeeRoleImpersonation = restTemplate.withSessionLogin(employee, PASSWORD)
+                .getForEntity("/api/knowledge/analytics/access?role=ADMIN", String.class);
+        assertEquals(403, employeeRoleImpersonation.getStatusCode().value());
+    }
+
+    private JsonNode findJson(
+            JsonNode array, String key, String value, String secondKey, String secondValue) {
+        for (JsonNode item : array) {
+            if (value.equals(item.path(key).asText())
+                    && secondValue.equals(item.path(secondKey).asText())) {
+                return item;
+            }
+        }
+        throw new AssertionError("No matching row for " + key + "=" + value
+                + " and " + secondKey + "=" + secondValue + " in " + array);
+    }
+
+    private JsonNode findJson(JsonNode array, String key, String value) {
+        for (JsonNode item : array) {
+            if (value.equals(item.path(key).asText())) {
+                return item;
+            }
+        }
+        throw new AssertionError("No matching row for " + key + "=" + value + " in " + array);
+    }
+
+    private JsonNode findJson(JsonNode array, String key, long value) {
+        for (JsonNode item : array) {
+            if (value == item.path(key).asLong()) {
+                return item;
+            }
+        }
+        throw new AssertionError("No matching row for " + key + "=" + value + " in " + array);
+    }
+
+    private boolean containsAccessibleDocument(JsonNode documents, long documentId) {
+        for (JsonNode document : documents) {
+            if (documentId == document.path("id").asLong()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private void stubAnswer(String answer) {
         ChatClient.ChatClientRequestSpec requestSpec = mock(ChatClient.ChatClientRequestSpec.class);
         ChatClient.CallResponseSpec callResponseSpec = mock(ChatClient.CallResponseSpec.class);
@@ -611,6 +890,88 @@ class KnowledgeUploadSearchIntegrationTest {
         String username = createUser(AppUser.Role.EMPLOYEE);
         ensureAccessPolicy(AppUser.Role.EMPLOYEE, KnowledgeDocument.AccessLevel.INTERNAL);
         return username;
+    }
+
+    private List<SeededDocument> createSeededDemonstrationDocuments(String ownerUsername) {
+        AppUser owner = userRepository.findByUsername(ownerUsername).orElseThrow();
+        List<SeededDocumentData> samples = List.of(
+                new SeededDocumentData("Company Remote Work Policy",
+                        "Guidelines for remote work arrangements including eligibility, equipment, and security requirements.",
+                        KnowledgeDocument.Category.HR, KnowledgeDocument.AccessLevel.INTERNAL,
+                        "remote-work-policy.txt",
+                        List.of(
+                                new SeededPassage("Section 1 – Eligibility",
+                                        "All full-time employees who have completed their 90-day probationary period are eligible to apply for remote work arrangements. Part-time and contract staff are not eligible. Remote work requires manager approval and HR sign-off."),
+                                new SeededPassage("Section 2 – Equipment",
+                                        "The company provides a laptop and VPN access to approved remote workers. Employees must use company-issued equipment for all work activities. Personal computers must not be used to access internal systems."))),
+                new SeededDocumentData("IT Security Guidelines",
+                        "Mandatory security practices: password policy, VPN usage, device management, and incident reporting.",
+                        KnowledgeDocument.Category.IT, KnowledgeDocument.AccessLevel.INTERNAL,
+                        "it-security-guidelines.txt",
+                        List.of(
+                                new SeededPassage("Section 1 – Password Policy",
+                                        "Passwords must be at least 12 characters, include uppercase, lowercase, a digit, and a special character. Passwords must be changed every 90 days. Do not reuse the last 10 passwords. Use the company-approved password manager."),
+                                new SeededPassage("Section 2 – VPN Usage",
+                                        "All remote access to internal systems must use the company VPN. VPN credentials must not be shared. Disconnect from VPN when not actively working. Report any VPN issues to the IT helpdesk immediately."))),
+                new SeededDocumentData("Employee Onboarding Handbook",
+                        "Step-by-step onboarding guide covering first-day checklist, system access, and HR policies.",
+                        KnowledgeDocument.Category.GENERAL, KnowledgeDocument.AccessLevel.PUBLIC,
+                        "onboarding-handbook.txt",
+                        List.of(
+                                new SeededPassage("Chapter 1 – Your First Day",
+                                        "On your first day, report to reception to collect your badge. You will meet your buddy mentor and attend a two-hour Welcome Orientation. IT will configure your laptop and provide credentials for email, Slack, and internal systems."),
+                                new SeededPassage("Chapter 2 – Benefits Enrollment",
+                                        "New employees have 30 days to enroll in health, dental, and vision benefits. Log in to the HR portal at hr.enterprise.local to complete enrollment. Contact hrmanager@enterprise.local with questions."))),
+                new SeededDocumentData("Salary Bands and Compensation Review Process",
+                        "Confidential HR document detailing salary bands by level and the annual review process.",
+                        KnowledgeDocument.Category.HR, KnowledgeDocument.AccessLevel.HR_ONLY,
+                        "salary-bands-confidential.txt",
+                        List.of(new SeededPassage("Salary Bands – Level 1 to 3",
+                                "Level 1 (Junior): $55,000–$75,000. Level 2 (Mid): $75,000–$100,000. Level 3 (Senior): $100,000–$140,000. Bands are reviewed annually in Q4. This document is confidential and restricted to HR personnel."))),
+                new SeededDocumentData("Q3 2024 IT Infrastructure Report",
+                        "Internal report on server uptime, incident count, and planned upgrades for Q4.",
+                        KnowledgeDocument.Category.IT, KnowledgeDocument.AccessLevel.INTERNAL,
+                        "q3-it-infra-report.txt",
+                        List.of(new SeededPassage("Q3 2024 Highlights",
+                                "Server uptime for Q3 2024 averaged 99.7%. There were 3 P1 incidents: a network outage on July 12 (resolved in 4h), a storage failure on August 6 (resolved in 2h), and a security patch window on September 20 (planned downtime)."))));
+
+        List<SeededDocument> created = new java.util.ArrayList<>();
+        int index = 1;
+        for (SeededDocumentData sample : samples) {
+            KnowledgeDocument document = documentRepository.save(KnowledgeDocument.builder()
+                    .title(sample.title())
+                    .description(sample.description())
+                    .category(sample.category())
+                    .accessLevel(sample.accessLevel())
+                    .owner(owner)
+                    .status(KnowledgeDocument.Status.INDEXED)
+                    .build());
+            seededDocumentIds.add(document.getId());
+            DocumentVersion version = versionRepository.save(DocumentVersion.builder()
+                    .document(document)
+                    .versionNumber(1)
+                    .originalFilename(sample.filename())
+                    .contentType("text/plain")
+                    .checksum("demo-seed-" + index++)
+                    .status(DocumentVersion.Status.PUBLISHED)
+                    .createdBy(owner)
+                    .build());
+            int chunkIndex = 0;
+            for (SeededPassage passage : sample.passages()) {
+                chunkRepository.save(KnowledgeChunk.builder()
+                        .documentVersion(version)
+                        .chunkIndex(chunkIndex++)
+                        .sectionReference(passage.section())
+                        .content(passage.content())
+                        .searchableText(passage.content())
+                        .build());
+            }
+            document.setCurrentVersion(version);
+            documentRepository.save(document);
+            created.add(new SeededDocument(document.getId(), sample.title(),
+                    sample.passages().get(0).content(), sample.passages().size()));
+        }
+        return created;
     }
 
     private String createUser(AppUser.Role role) {
@@ -817,5 +1178,20 @@ class KnowledgeUploadSearchIntegrationTest {
             }
         }
         return false;
+    }
+
+    private record SeededDocumentData(
+            String title,
+            String description,
+            KnowledgeDocument.Category category,
+            KnowledgeDocument.AccessLevel accessLevel,
+            String filename,
+            List<SeededPassage> passages) {
+    }
+
+    private record SeededPassage(String section, String content) {
+    }
+
+    private record SeededDocument(Long id, String title, String firstPassage, int chunkCount) {
     }
 }

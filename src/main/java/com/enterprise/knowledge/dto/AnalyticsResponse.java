@@ -1,6 +1,8 @@
 
 package com.enterprise.knowledge.dto;
 
+import java.util.List;
+
 public class AnalyticsResponse {
 
     private long totalDocuments;
@@ -9,6 +11,10 @@ public class AnalyticsResponse {
     private long totalQuestions;
     private long answeredQuestions;
     private double averageFeedbackRating;
+    private List<DocumentCategoryStatusCount> documentCountsByCategoryAndStatus = List.of();
+    private List<PendingReindexDocument> pendingReindexDocuments = List.of();
+    private List<SearchCategoryCount> mostFrequentlySearchedCategories = List.of();
+    private List<DocumentFeedbackSummary> feedbackByDocument = List.of();
 
     public AnalyticsResponse() {
     }
@@ -76,6 +82,40 @@ public class AnalyticsResponse {
         this.averageFeedbackRating = averageFeedbackRating;
     }
 
+    public List<DocumentCategoryStatusCount> getDocumentCountsByCategoryAndStatus() {
+        return documentCountsByCategoryAndStatus;
+    }
+
+    public void setDocumentCountsByCategoryAndStatus(
+            List<DocumentCategoryStatusCount> documentCountsByCategoryAndStatus) {
+        this.documentCountsByCategoryAndStatus = documentCountsByCategoryAndStatus;
+    }
+
+    public List<PendingReindexDocument> getPendingReindexDocuments() {
+        return pendingReindexDocuments;
+    }
+
+    public void setPendingReindexDocuments(List<PendingReindexDocument> pendingReindexDocuments) {
+        this.pendingReindexDocuments = pendingReindexDocuments;
+    }
+
+    public List<SearchCategoryCount> getMostFrequentlySearchedCategories() {
+        return mostFrequentlySearchedCategories;
+    }
+
+    public void setMostFrequentlySearchedCategories(
+            List<SearchCategoryCount> mostFrequentlySearchedCategories) {
+        this.mostFrequentlySearchedCategories = mostFrequentlySearchedCategories;
+    }
+
+    public List<DocumentFeedbackSummary> getFeedbackByDocument() {
+        return feedbackByDocument;
+    }
+
+    public void setFeedbackByDocument(List<DocumentFeedbackSummary> feedbackByDocument) {
+        this.feedbackByDocument = feedbackByDocument;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -87,6 +127,10 @@ public class AnalyticsResponse {
         private long totalQuestions;
         private long answeredQuestions;
         private double averageFeedbackRating;
+        private List<DocumentCategoryStatusCount> documentCountsByCategoryAndStatus = List.of();
+        private List<PendingReindexDocument> pendingReindexDocuments = List.of();
+        private List<SearchCategoryCount> mostFrequentlySearchedCategories = List.of();
+        private List<DocumentFeedbackSummary> feedbackByDocument = List.of();
 
         public Builder totalDocuments(long value) {
             this.totalDocuments = value;
@@ -118,14 +162,40 @@ public class AnalyticsResponse {
             return this;
         }
 
+        public Builder documentCountsByCategoryAndStatus(
+                List<DocumentCategoryStatusCount> value) {
+            this.documentCountsByCategoryAndStatus = value;
+            return this;
+        }
+
+        public Builder pendingReindexDocuments(List<PendingReindexDocument> value) {
+            this.pendingReindexDocuments = value;
+            return this;
+        }
+
+        public Builder mostFrequentlySearchedCategories(List<SearchCategoryCount> value) {
+            this.mostFrequentlySearchedCategories = value;
+            return this;
+        }
+
+        public Builder feedbackByDocument(List<DocumentFeedbackSummary> value) {
+            this.feedbackByDocument = value;
+            return this;
+        }
+
         public AnalyticsResponse build() {
-            return new AnalyticsResponse(
+            AnalyticsResponse response = new AnalyticsResponse(
                     totalDocuments,
                     indexedDocuments,
                     totalSearches,
                     totalQuestions,
                     answeredQuestions,
                     averageFeedbackRating);
+            response.setDocumentCountsByCategoryAndStatus(documentCountsByCategoryAndStatus);
+            response.setPendingReindexDocuments(pendingReindexDocuments);
+            response.setMostFrequentlySearchedCategories(mostFrequentlySearchedCategories);
+            response.setFeedbackByDocument(feedbackByDocument);
+            return response;
         }
     }
 }

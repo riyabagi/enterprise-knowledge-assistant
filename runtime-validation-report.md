@@ -7,13 +7,14 @@
 
 | Step | Status | Result | Details |
 |---|---|---:|---|
-| Clean compile | PASS | Exit 0 | Re-run on 2026-10-14; `mvn clean compile`; 58 main Java files compiled with Java 21 |
-| Full test suite | PASS | Exit 0; 53 passed, 0 failed, 0 skipped | Re-run on 2026-10-14; `mvn test` |
+| Clean compile | PASS | Exit 0 | Re-run on 2026-10-14; `mvn clean compile`; 59 main Java files compiled with Java 21 |
+| Full test suite | PASS | Exit 0; 56 passed, 0 failed, 0 skipped | Re-run on 2026-10-14; `mvn test` |
 | Frontend syntax | PASS | Exit 0 | `node --check src\main\resources\static\js\app.js` |
 | Session authentication | PASS | Verified | HTTP integration login using corrected seeded BCrypt hashes, JSESSIONID continuity, `/api/auth/me`, logout, CSRF, expired session, and role restrictions |
 | HTTP Basic challenge removal | PASS | Verified | Anonymous protected GET returned JSON 401 with no `WWW-Authenticate` header |
 | Standalone startup and browser rendering | PARTIAL | Health 200; H2 schema applied; landing page rendered | Started with Java 21 and the default `test` profile on port 8081; anonymous API request returned expected 401. No authenticated user was seeded for browser verification. |
-| Document-management API | PASS | Covered by H2 integration tests | Admin-only delete and metadata update, related version/chunk cleanup, protected content reads, version history/reindex, and authorization/error cases |
+| Document-management API | PASS | Covered by H2 integration tests | Seed demo documents read/content/preview/history; admin metadata updates persist without version/chunk changes; HR_ONLY routes deny employees; uploaded reads, versioning, deletion, and search remain covered |
+| V4 seed-text migration | PASS | 2 H2 Flyway tests passed | Populates all five matching empty seed versions in section/chunk order; leaves populated text and uploaded content alone; rerunning Flyway creates no duplicate versions/chunks |
 | Synthetic RAG evaluation | PASS | supported=1, citation-valid=2, abstained=2, conflicts=1 | Dynamically computed from the controlled test set |
 | VPN RAG prompt smoke test | PASS | Supported VPN answer cited `[1]`; unrelated evidence led to abstention | Direct local Ollama `qwen2.5:3b` generation at configured temperature 0.1; not an application/database end-to-end test |
 
@@ -73,13 +74,19 @@ deletion and related version/chunk cleanup, rejection of unauthorized deletion,
 not-found behavior, metadata validation and access-level changes, HR_ONLY content
 protection, version history, and new-version reindexing. Search tests cover
 normalized queries, distinct document ranking, and metadata/text fallback.
+The seed-document integration test covers all five demonstration passage sets
+through content, preview, and version-history endpoints; metadata reload and
+access control; Search and Ask citation retrieval; and no version/chunk changes
+from metadata-only edits. A separate read assertion protects uploaded-document
+behavior.
 
 ## Full-suite test breakdown
 
 - `ApplicationSecurityIntegrationTest`: 2 passed
-- `KnowledgeUploadSearchIntegrationTest`: 15 passed
+- `KnowledgeUploadSearchIntegrationTest`: 16 passed
 - `SessionAuthenticationIntegrationTest`: 7 passed
 - `SeedPasswordMigrationTest`: 1 passed
+- `SeedDocumentTextMigrationTest`: 2 passed
 - `SearchRequestValidationTest`: 1 passed
 - `EntityBuilderDefaultsTest`: 3 passed
 - `AskServiceTest`: 14 passed
@@ -89,6 +96,32 @@ normalized queries, distinct document ranking, and metadata/text fallback.
 
 Automated RAG regression tests use deterministic mocked model responses; local
 Ollama is not required to run `mvn test`.
+
+## Seed sample document Read/Edit/version follow-up
+
+- Root cause: V2 inserted the five seeded `document_version` rows without
+  `extracted_text`; `getContent` depends on that value and returned a
+  not-found response, while preview returned empty text. Existing administrator
+  metadata-edit and version-history APIs/forms were already in place.
+- Flyway V2 was left unchanged to avoid checksum validation failures on
+  installations where it has already run. V4 is a Java migration discovered at
+  `classpath:db/migration`; it matches only the five fixed seed IDs plus their
+  original filename/checksum/document/version identity, and fills only a blank
+  extracted-text field from the ordered `knowledge_chunk` rows. It prepends an
+  explicit statement that the result is demonstration text, not an original
+  source file. It inserts no documents, versions, or chunks.
+- For an empty extracted-text field outside that migration case, the content
+  and preview service paths reconstruct text from ordered chunks and label it
+  as reconstructed, without claiming it is original source text. The normal
+  document access-level check runs before this fallback.
+- H2 Flyway migration tests verify all five fixture identities, passage order,
+  preservation of pre-populated text and uploaded content, and unchanged
+  version/chunk counts after a repeat migration attempt. H2 HTTP tests cover all
+  five sample flows, HR_ONLY denial, metadata persistence without version
+  changes, Search/Ask retrieval, and uploaded-document Read.
+- MySQL credentials were unavailable, so Flyway V4 and MySQL-specific FULLTEXT
+  search were not run against MySQL. The H2 tests do not establish MySQL
+  FULLTEXT compatibility.
 
 ## Ask AI VPN failure follow-up
 
@@ -191,7 +224,7 @@ environment:
   infra-tier: FALLBACK(embedded/in-memory) — Docker unavailable; H2-backed integration tests passed
   browser-tier: UNVERIFIED — landing page rendered in the integrated browser, but no authenticated browser journey or Playwright suite ran
 startup: PASS — mvn spring-boot:run with the default test profile; Flyway applied the H2 test schema and /actuator/health returned 200
-integration: PASS — exit_code: 0, passed: 53, failed: 0, skipped: 0; H2 HTTP/API and service tests; MySQL SQL/FULLTEXT compatibility remains unverified
+integration: PASS — exit_code: 0, passed: 56, failed: 0, skipped: 0; H2 HTTP/API and Flyway migration tests; MySQL SQL/FULLTEXT compatibility remains unverified
 e2e: PARTIAL — exit_code: N/A, passed: 0, failed: 0; browser loaded the landing page, but authenticated document and RAG flows were not exercised
 overall: NEEDS_SIGNOFF — build and automated test suite pass; Playwright/authenticated browser and live MySQL verification remain open
 ```

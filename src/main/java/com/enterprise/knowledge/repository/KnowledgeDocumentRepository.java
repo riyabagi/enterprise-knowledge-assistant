@@ -1,5 +1,7 @@
 package com.enterprise.knowledge.repository;
 
+import com.enterprise.knowledge.dto.DocumentCategoryStatusCount;
+import com.enterprise.knowledge.dto.PendingReindexDocument;
 import com.enterprise.knowledge.entity.KnowledgeDocument;
 import com.enterprise.knowledge.entity.KnowledgeDocument.AccessLevel;
 import com.enterprise.knowledge.entity.KnowledgeDocument.Category;
@@ -11,6 +13,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.Collection;
+import java.util.List;
 
 public interface KnowledgeDocumentRepository extends JpaRepository<KnowledgeDocument, Long> {
 
@@ -27,4 +30,26 @@ public interface KnowledgeDocumentRepository extends JpaRepository<KnowledgeDocu
             Pageable pageable);
 
     long countByStatus(Status status);
+
+    @Query("""
+            SELECT new com.enterprise.knowledge.dto.DocumentCategoryStatusCount(
+                d.category, d.status, COUNT(d))
+            FROM KnowledgeDocument d
+            GROUP BY d.category, d.status
+            ORDER BY d.category, d.status
+            """)
+    List<DocumentCategoryStatusCount> countDocumentsByCategoryAndStatus();
+
+    @Query("""
+            SELECT new com.enterprise.knowledge.dto.PendingReindexDocument(
+                d.id, d.title, d.category, d.status, d.reindexRequired,
+                d.accessLevel, d.updatedAt)
+            FROM KnowledgeDocument d
+            WHERE d.reindexRequired = true
+            ORDER BY d.updatedAt ASC, d.id ASC
+            """)
+    List<PendingReindexDocument> findPendingReindexDocuments();
+
+    List<KnowledgeDocument> findByStatusAndAccessLevelInOrderByTitleAsc(
+            Status status, Collection<AccessLevel> accessLevels);
 }

@@ -12,6 +12,8 @@ import java.util.List;
 public interface KnowledgeChunkRepository extends JpaRepository<KnowledgeChunk, Long>, KnowledgeChunkSearchRepository {
     List<KnowledgeChunk> findByDocumentVersionId(Long documentVersionId);
 
+    List<KnowledgeChunk> findByDocumentVersionIdOrderByChunkIndex(Long documentVersionId);
+
     long countByDocumentVersionIdIn(Collection<Long> documentVersionIds);
 
     List<KnowledgeChunk> findByIdIn(Collection<Long> ids);

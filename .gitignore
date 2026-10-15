@@ -6,6 +6,8 @@
 # Build output
 target/
 build/
+.learning-guide/
+learning-guide/
 
 # IDE files
 .idea/
