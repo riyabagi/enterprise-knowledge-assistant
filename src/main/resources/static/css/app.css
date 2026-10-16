@@ -189,6 +189,7 @@ html, body { background: var(--surface); color: var(--text); font-family: 'Segoe
 .analytics-table-action { background: #f3f7fd; border-color: #d6e3f4; color: #2d65ad; border-radius: 7px; font-size: .72rem; white-space: nowrap; }
 .analytics-table-action:hover { background: #e8f1ff; border-color: #b6cfee; color: #214f8c; }
 .analytics-access-panel { margin-top: .95rem; }
+.analytics-access-panel[hidden] { display: none; }
 .analytics-role-picker { display: flex; align-items: center; gap: .55rem; color: var(--analytics-muted); font-size: .76rem; white-space: nowrap; }
 .analytics-role-picker select { min-width: 132px; background-color: #fff; border-color: #d9e1ec; color: #2e435f; border-radius: 8px; }
 .analytics-dashboard .table-responsive { margin: 0; }

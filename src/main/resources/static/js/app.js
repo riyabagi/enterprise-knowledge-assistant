@@ -659,9 +659,11 @@ async function loadAnalytics() {
     const grid = document.getElementById('analytics-grid');
     const reports = document.getElementById('analytics-reports');
     const accessReport = document.getElementById('analytics-access-report');
+    const accessSection = document.getElementById('analytics-access-section');
     const refreshButton = document.getElementById('analytics-refresh-btn');
     const status = document.getElementById('analytics-status');
-    const role = document.getElementById('analytics-access-role').value;
+    const isAdmin = state.auth.role === 'ADMIN';
+    accessSection.hidden = !isAdmin;
 
     refreshButton.disabled = true;
     refreshButton.setAttribute('aria-busy', 'true');
@@ -669,15 +671,22 @@ async function loadAnalytics() {
     status.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-label="Loading"></span>Loading analytics data…';
     grid.innerHTML = '';
     reports.innerHTML = '';
-    accessReport.innerHTML = '<p class="analytics-empty">Loading role access…</p>';
+    accessReport.innerHTML = isAdmin ? '<p class="analytics-empty">Loading role access…</p>' : '';
 
     try {
-        const [response, accessResponse] = await Promise.all([
+        const requests = [
             apiFetch('/api/knowledge/analytics'),
-            apiFetch(`/api/knowledge/analytics/access?role=${encodeURIComponent(role)}`)
-        ]);
+            isAdmin
+                ? apiFetch(`/api/knowledge/analytics/access?role=${encodeURIComponent(document.getElementById('analytics-access-role').value)}`)
+                : Promise.resolve(null)
+        ];
+        const [response, accessResponse] = await Promise.all(requests);
         if (response.status === 403) {
-            status.innerHTML = '<div class="analytics-error"><i class="bi bi-shield-lock" aria-hidden="true"></i><span>Analytics is restricted to Admin users.</span></div>';
+            if (isAdmin) {
+                status.innerHTML = '<div class="analytics-error"><i class="bi bi-shield-lock" aria-hidden="true"></i><span>Analytics is restricted to Admin users.</span></div>';
+            } else {
+                status.textContent = '';
+            }
             accessReport.innerHTML = '';
             return;
         }
@@ -703,9 +712,9 @@ async function loadAnalytics() {
         grid.innerHTML = metrics.map(renderAnalyticsMetric).join('');
         renderAnalyticsReports(data);
 
-        if (!accessResponse.ok) {
+        if (isAdmin && !accessResponse.ok) {
             accessReport.innerHTML = `<div class="analytics-error"><i class="bi bi-exclamation-circle" aria-hidden="true"></i><span>${escHtml(`Unable to load role access (HTTP ${accessResponse.status}).`)}</span></div>`;
-        } else {
+        } else if (isAdmin) {
             renderRoleAccessReport(await accessResponse.json());
         }
         status.textContent = 'Analytics data loaded.';
@@ -722,7 +731,7 @@ async function loadAnalytics() {
 }
 
 async function loadRoleAccessReport() {
-    if (!state.auth) return;
+    if (!state.auth || state.auth.role !== 'ADMIN') return;
     const role = document.getElementById('analytics-access-role').value;
     const container = document.getElementById('analytics-access-report');
     container.innerHTML = '<p class="analytics-empty">Loading role access…</p>';
