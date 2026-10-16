@@ -2,7 +2,33 @@
 
 An AI-assisted internal knowledge portal built with Java and Spring Boot. It enables employees to upload and search company documents, ask questions in natural language, and receive answers grounded in retrieved document content.
 
+# Enterprise Knowledge Assistant
+
+An AI-assisted internal knowledge portal built with Java and Spring Boot. It enables employees to upload and search company documents, ask questions in natural language, and receive answers grounded in retrieved document content.
+
 The application uses MySQL for document storage and full-text search, Spring Security for authentication and authorization, and Ollama for locally hosted AI answer generation.
+
+## Screenshots
+
+### 1. Login Page
+
+![Login Page](screenshots/Login.png)
+
+### 2. Documents Dashboard
+
+![Documents Dashboard](screenshots/Documents.png)
+
+### 3. Search Results
+
+![Search Results](screenshots/Serach_Result.png)
+
+### 4. AI Answer
+
+![AI Answer](screenshots/AI_answer.png)
+
+### 5. Analytics Dashboard
+
+![Analytics Dashboard](screenshots/Analytics.png)
 
 ## Features
 
@@ -28,23 +54,23 @@ document metadata; changing document content is done by uploading a new version.
 
 ## Technology Stack
 
-| Component | Technology |
-|---|---|
-| Programming language | Java 21 |
-| Backend framework | Spring Boot 3.3.5 |
-| REST APIs | Spring Web |
-| Persistence | Spring Data JPA, Hibernate |
-| Database | MySQL 8 |
-| Database migrations | Flyway |
-| Connection pooling | HikariCP |
-| Authentication and authorization | Spring Security |
-| AI integration | Spring AI |
-| Local AI runtime | Ollama |
-| Default chat model | Qwen2.5 3B |
-| Frontend | HTML5, CSS3, JavaScript |
-| Build tool | Maven |
-| Testing | JUnit 5, Mockito, Spring Boot Test, H2 |
-| API documentation | Springdoc OpenAPI |
+| Component                        | Technology                             |
+| -------------------------------- | -------------------------------------- |
+| Programming language             | Java 21                                |
+| Backend framework                | Spring Boot 3.3.5                      |
+| REST APIs                        | Spring Web                             |
+| Persistence                      | Spring Data JPA, Hibernate             |
+| Database                         | MySQL 8                                |
+| Database migrations              | Flyway                                 |
+| Connection pooling               | HikariCP                               |
+| Authentication and authorization | Spring Security                        |
+| AI integration                   | Spring AI                              |
+| Local AI runtime                 | Ollama                                 |
+| Default chat model               | Qwen2.5 3B                             |
+| Frontend                         | HTML5, CSS3, JavaScript                |
+| Build tool                       | Maven                                  |
+| Testing                          | JUnit 5, Mockito, Spring Boot Test, H2 |
+| API documentation                | Springdoc OpenAPI                      |
 
 ## Architecture
 
@@ -224,12 +250,12 @@ mvn spring-boot:run
 
 After successful startup, open:
 
-| Resource | URL |
-|---|---|
-| Web application | http://localhost:8080 |
+| Resource        | URL                                   |
+| --------------- | ------------------------------------- |
+| Web application | http://localhost:8080                 |
 | Health endpoint | http://localhost:8080/actuator/health |
-| Swagger UI | http://localhost:8080/swagger-ui.html |
-| OpenAPI JSON | http://localhost:8080/api-docs |
+| Swagger UI      | http://localhost:8080/swagger-ui.html |
+| OpenAPI JSON    | http://localhost:8080/api-docs        |
 
 Swagger and Actuator availability depends on the active configuration and security rules.
 
@@ -253,11 +279,11 @@ src/main/resources/db/migration/
 
 The project includes the following migrations:
 
-| Migration | Purpose |
-|---|---|
-| `V1__schema.sql` | Creates the application database schema. |
-| `V2__seed.sql` | Adds demonstration users, access policies, documents, versions, and sample chunks. |
-| `V3__repair_seed_password_hashes.sql` | Conditionally repairs the designated unchanged demonstration password hashes. |
+| Migration                             | Purpose                                                                            |
+| ------------------------------------- | ---------------------------------------------------------------------------------- |
+| `V1__schema.sql`                      | Creates the application database schema.                                           |
+| `V2__seed.sql`                        | Adds demonstration users, access policies, documents, versions, and sample chunks. |
+| `V3__repair_seed_password_hashes.sql` | Conditionally repairs the designated unchanged demonstration password hashes.      |
 
 Inspect the migration history in MySQL:
 
@@ -281,11 +307,11 @@ The application uses database-backed Spring Security authentication and sessions
 
 The seed migration defines these development accounts:
 
-| Role | Username | Demonstration password |
-|---|---|---|
-| Administrator | `admin` | `admin123` |
-| Employee | `alice` | `alice123` |
-| HR | `hrmanager` | `hrm123` |
+| Role          | Username    | Demonstration password |
+| ------------- | ----------- | ---------------------- |
+| Administrator | `admin`     | `admin123`             |
+| Employee      | `alice`     | `alice123`             |
+| HR            | `hrmanager` | `hrm123`               |
 
 These credentials are intended for local demonstration only. Verify that the accounts work in your database, and change or remove them before deployment. Never reuse these passwords in production.
 
@@ -305,38 +331,38 @@ The following routes are implemented in the project according to the current app
 
 ### Authentication
 
-| Method | Endpoint | Purpose |
-|---|---|---|
-| GET | `/api/auth/csrf` | Obtain the CSRF token. |
-| POST | `/api/auth/login` | Authenticate a user. |
-| GET | `/api/auth/me` | Retrieve the current session user. |
-| POST | `/api/auth/logout` | Invalidate the session. |
+| Method | Endpoint           | Purpose                            |
+| ------ | ------------------ | ---------------------------------- |
+| GET    | `/api/auth/csrf`   | Obtain the CSRF token.             |
+| POST   | `/api/auth/login`  | Authenticate a user.               |
+| GET    | `/api/auth/me`     | Retrieve the current session user. |
+| POST   | `/api/auth/logout` | Invalidate the session.            |
 
 ### Documents
 
-| Method | Endpoint | Purpose |
-|---|---|---|
-| POST | `/api/knowledge/documents` | Upload a document and its metadata. |
-| GET | `/api/knowledge/documents` | List documents with pagination and optional category filtering. |
-| GET | `/api/knowledge/documents/{id}` | Retrieve document details. |
-| GET | `/api/knowledge/documents/{id}/preview` | Retrieve an extracted-text preview. |
-| GET | `/api/knowledge/documents/{id}/content` | Retrieve the current extracted document text. |
-| GET | `/api/knowledge/documents/{id}/versions` | Retrieve document version history. |
-| PUT | `/api/knowledge/documents/{id}` | Update document metadata; admin-only. |
-| PUT | `/api/knowledge/documents/{id}/reindex` | Upload a new document version; admin-only. |
-| POST | `/api/knowledge/documents/{id}/archive` | Archive a document; admin-only. |
-| DELETE | `/api/knowledge/documents/{id}` | Permanently delete a document; admin-only. |
+| Method | Endpoint                                 | Purpose                                                         |
+| ------ | ---------------------------------------- | --------------------------------------------------------------- |
+| POST   | `/api/knowledge/documents`               | Upload a document and its metadata.                             |
+| GET    | `/api/knowledge/documents`               | List documents with pagination and optional category filtering. |
+| GET    | `/api/knowledge/documents/{id}`          | Retrieve document details.                                      |
+| GET    | `/api/knowledge/documents/{id}/preview`  | Retrieve an extracted-text preview.                             |
+| GET    | `/api/knowledge/documents/{id}/content`  | Retrieve the current extracted document text.                   |
+| GET    | `/api/knowledge/documents/{id}/versions` | Retrieve document version history.                              |
+| PUT    | `/api/knowledge/documents/{id}`          | Update document metadata; admin-only.                           |
+| PUT    | `/api/knowledge/documents/{id}/reindex`  | Upload a new document version; admin-only.                      |
+| POST   | `/api/knowledge/documents/{id}/archive`  | Archive a document; admin-only.                                 |
+| DELETE | `/api/knowledge/documents/{id}`          | Permanently delete a document; admin-only.                      |
 
 ### Search, AI, Feedback, and Analytics
 
-| Method | Endpoint | Purpose |
-|---|---|---|
-| GET | `/api/knowledge/search?query=...` | Search documents, with optional category and pagination parameters. |
-| POST | `/api/knowledge/search` | Search using a JSON request. |
-| POST | `/api/knowledge/ask` | Ask a natural-language question. |
-| POST | `/api/knowledge/feedback` | Submit feedback on an answer or document. |
-| GET | `/api/knowledge/analytics` | Retrieve summary metrics and document/status, re-index, search-category, and feedback reports; admin-only. |
-| GET | `/api/knowledge/analytics/access?role=EMPLOYEE` | Admin-only report of indexed documents visible to the specified role, resolved through `access_policy`. |
+| Method | Endpoint                                        | Purpose                                                                                                    |
+| ------ | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/knowledge/search?query=...`               | Search documents, with optional category and pagination parameters.                                        |
+| POST   | `/api/knowledge/search`                         | Search using a JSON request.                                                                               |
+| POST   | `/api/knowledge/ask`                            | Ask a natural-language question.                                                                           |
+| POST   | `/api/knowledge/feedback`                       | Submit feedback on an answer or document.                                                                  |
+| GET    | `/api/knowledge/analytics`                      | Retrieve summary metrics and document/status, re-index, search-category, and feedback reports; admin-only. |
+| GET    | `/api/knowledge/analytics/access?role=EMPLOYEE` | Admin-only report of indexed documents visible to the specified role, resolved through `access_policy`.    |
 
 For exact JSON schemas and available operations, consult the application's Swagger UI.
 
@@ -372,12 +398,12 @@ Check the actual Maven test results before reporting that the suite passes.
 
 ## Configuration Reference
 
-| Environment variable | Purpose | Default |
-|---|---|---|
-| `DB_USERNAME` | MySQL username | `root` in the development configuration |
-| `DB_PASSWORD` | MySQL password | Must be configured |
-| `OLLAMA_BASE_URL` | Ollama API URL | `http://localhost:11434` |
-| `OLLAMA_MODEL` | Chat model identifier | `qwen2.5:3b` |
+| Environment variable | Purpose               | Default                                 |
+| -------------------- | --------------------- | --------------------------------------- |
+| `DB_USERNAME`        | MySQL username        | `root` in the development configuration |
+| `DB_PASSWORD`        | MySQL password        | Must be configured                      |
+| `OLLAMA_BASE_URL`    | Ollama API URL        | `http://localhost:11434`                |
+| `OLLAMA_MODEL`       | Chat model identifier | `qwen2.5:3b`                            |
 
 Confirm the current configuration files before changing these values.
 
